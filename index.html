@@ -932,6 +932,8 @@
     let roomChannel = null;
     let roomCode = '';
     let roomAction = 'join';
+    let roomOwnerId = '';
+    let roomJoined = false;
     let remotePlayers = {};
     let lastSentState = '';
     
@@ -1130,7 +1132,7 @@
       const presence = roomChannel.presenceState();
       Object.entries(presence).forEach(([id, entries]) => {
         if (id !== playerId && entries.length) {
-          remotePlayers[id] = entries[entries.length - 1];
+          remotePlayers[id] = { ...remotePlayers[id], ...entries[entries.length - 1] };
         }
       });
       const count = Object.keys(presence).length;
@@ -1147,8 +1149,47 @@
       return board.every((value, index) => value === index);
     }
 
+    function sendRoomEvent(event, payload) {
+      if (!roomChannel || !roomJoined) return;
+      const send = roomChannel.send({ type: 'broadcast', event, payload });
+      if (send && typeof send.then === 'function') {
+        send.then(result => {
+          if ((result === 'timed out' || result === 'error') && typeof roomChannel.httpSend === 'function') {
+            roomChannel.httpSend(event, payload);
+          }
+        }).catch(() => setRoomStatus('Realtime connection lost. Rejoin the room.', 'error'));
+      }
+    }
+
+    function broadcastRoomConfig(targetId = null) {
+      if (roomOwnerId !== playerId || !loadedImageSrc) return;
+      sendRoomEvent('room_config', {
+        ownerId: playerId,
+        targetId,
+        image: loadedImageSrc,
+        gridSize
+      });
+    }
+
+    function applyRoomConfig(config) {
+      if (!config || config.ownerId === playerId || !config.image) return;
+      if (config.targetId && config.targetId !== playerId) return;
+
+      roomOwnerId = config.ownerId;
+      gridSize = Number(config.gridSize) || gridSize;
+      document.documentElement.style.setProperty('--grid-size', gridSize);
+      difficultyButtons.forEach(btn => btn.classList.toggle('active', Number(btn.dataset.grid) === gridSize));
+
+      if (loadedImageSrc === config.image) return;
+      originalImageSrc = config.image;
+      loadedImageSrc = config.image;
+      referencePreview.style.backgroundImage = `url('${loadedImageSrc}')`;
+      setupBoard();
+      renderOpponentPlayers();
+    }
+
     function broadcastState(force = false) {
-      if (!roomChannel || !board.length) return;
+      if (!roomJoined || !board.length) return;
       const state = {
         playerId,
         name: getPlayerName(),
@@ -1162,12 +1203,7 @@
       const signature = JSON.stringify({ ...state, sentAt: 0 });
       if (!force && signature === lastSentState) return;
       lastSentState = signature;
-      roomChannel.track(state);
-      roomChannel.send({
-        type: 'broadcast',
-        event: 'player_state',
-        payload: state
-      });
+      sendRoomEvent('player_state', state);
     }
 
     async function connectToRoom(nextCode, action = 'join') {
@@ -1182,8 +1218,10 @@
       }
 
       if (roomChannel) await supabaseClient.removeChannel(roomChannel);
+      roomJoined = false;
       roomCode = code;
       roomAction = action;
+      roomOwnerId = action === 'create' ? playerId : '';
       roomCodeInput.value = code;
       updateRoomUrl();
       remotePlayers = {};
@@ -1193,7 +1231,7 @@
       setRoomStatus(`Connecting to room ${code}…`);
 
       roomChannel = supabaseClient.channel(`flux-room:${code}`, {
-        config: { presence: { key: playerId }, broadcast: { self: false } }
+        config: { private: false, presence: { key: playerId }, broadcast: { self: false, ack: true } }
       });
 
       roomChannel
@@ -1207,13 +1245,25 @@
           if (!payload || payload.playerId === playerId) return;
           remotePlayers[payload.playerId] = payload;
           renderOpponentPlayers();
+        })
+        .on('broadcast', { event: 'request_room_config' }, ({ payload }) => {
+          if (payload?.requesterId !== playerId) broadcastRoomConfig(payload?.requesterId || null);
+        })
+        .on('broadcast', { event: 'room_config' }, ({ payload }) => {
+          applyRoomConfig(payload);
         });
 
       roomChannel.subscribe(async status => {
         if (status === 'SUBSCRIBED') {
-          await roomChannel.track({ playerId, name: getPlayerName() });
+          roomJoined = true;
+          await roomChannel.track({ playerId, name: getPlayerName(), host: roomOwnerId === playerId });
           copyRoomBtn.disabled = false;
           refreshPresence();
+          if (roomOwnerId === playerId) {
+            broadcastRoomConfig();
+          } else {
+            sendRoomEvent('request_room_config', { requesterId: playerId });
+          }
           broadcastState(true);
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           setRoomStatus('Could not connect to that room.', 'error');
@@ -1340,6 +1390,7 @@
         
         setupBoard();
         renderOpponentPlayers();
+        broadcastRoomConfig();
       };
       
       img.onerror = function() {
@@ -1385,6 +1436,7 @@
       referencePreview.style.backgroundImage = `url('${loadedImageSrc}')`;
       setupBoard();
       renderOpponentPlayers();
+      broadcastRoomConfig();
     }
 
     // --- GAME LOGIC ENGINE ---
@@ -1838,7 +1890,7 @@
     playerNameInput.addEventListener('change', () => {
       getPlayerName();
       if (roomChannel) {
-        roomChannel.track({ playerId, name: getPlayerName() });
+        roomChannel.track({ playerId, name: getPlayerName(), host: roomOwnerId === playerId });
         broadcastState(true);
       }
     });
@@ -2099,4 +2151,3 @@
   </script>
 </body>
 </html>
-
