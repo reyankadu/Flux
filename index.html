@@ -382,6 +382,19 @@
       gap: 12px;
     }
 
+    .board-actions {
+      width: 100%;
+      display: flex;
+      gap: 8px;
+    }
+
+    .board-actions .btn {
+      flex: 1;
+      min-width: 0;
+      padding-left: 8px;
+      padding-right: 8px;
+    }
+
     .opponents-panel {
       min-width: 0;
       padding: 14px;
@@ -740,16 +753,13 @@
     <p>Upload, slide, and share picture puzzles with friends</p>
   </header>
 
-  <!-- Sound and Number top utilities -->
+  <!-- Sound and hint top utilities -->
   <div class="top-controls">
     <button class="top-btn" id="hint-toggle-btn">
       💡 Show Hint
     </button>
     <button class="top-btn" id="sound-toggle-btn">
       <span id="sound-icon">🔊</span> Sound On
-    </button>
-    <button class="top-btn" id="numbers-toggle-btn">
-      🔢 Show Guides
     </button>
   </div>
 
@@ -838,10 +848,11 @@
             </div>
           </div>
 
-          <!-- Reset/Reshuffle buttons -->
-          <div style="width: 100%; display: flex; gap: 12px;">
-            <button class="btn" style="flex: 1;" id="shuffle-btn">🔄 Reshuffle</button>
-            <button class="btn" style="flex: 1;" id="peek-btn">👁️ Hold to Peek</button>
+          <!-- Board utilities -->
+          <div class="board-actions">
+            <button class="btn" id="shuffle-btn">🔄 Reshuffle</button>
+            <button class="btn" id="peek-btn">👁️ Hold to Peek</button>
+            <button class="btn" id="numbers-toggle-btn" title="Toggle guides" aria-label="Toggle guides">👁️ Guides</button>
           </div>
         </div>
 
@@ -884,6 +895,27 @@
       </div>
 
       <button class="btn btn-block btn-pink" id="victory-restart-btn" style="padding: 14px;">Play Again</button>
+    </div>
+  </div>
+
+  <!-- Multiplayer Loss Overlay -->
+  <div class="modal-overlay" id="defeat-modal">
+    <div class="victory-card">
+      <h2 class="victory-title">You Lost 💥</h2>
+      <p>Your opponent solved the puzzle first.</p>
+
+      <div class="victory-stats">
+        <div class="victory-stat-box">
+          <div class="stat-label">Moves</div>
+          <div id="defeat-moves" class="stat-val" style="color: var(--color-accent);">0</div>
+        </div>
+        <div class="victory-stat-box">
+          <div class="stat-label">Time Elapsed</div>
+          <div id="defeat-time" class="stat-val" style="color: var(--color-neon);">00:00</div>
+        </div>
+      </div>
+
+      <button class="btn btn-block btn-pink" id="defeat-restart-btn" style="padding: 14px;">Play Again</button>
     </div>
   </div>
 
@@ -955,6 +987,10 @@
     const victoryMovesEl = document.getElementById('victory-moves');
     const victoryTimeEl = document.getElementById('victory-time');
     const victoryRestartBtn = document.getElementById('victory-restart-btn');
+    const defeatModal = document.getElementById('defeat-modal');
+    const defeatMovesEl = document.getElementById('defeat-moves');
+    const defeatTimeEl = document.getElementById('defeat-time');
+    const defeatRestartBtn = document.getElementById('defeat-restart-btn');
     
     const shareGameBtn = document.getElementById('share-game-btn');
     const shareModal = document.getElementById('share-modal');
@@ -1052,6 +1088,15 @@
     function setRoomStatus(message, kind = '') {
       roomStatus.textContent = message;
       roomStatus.className = `room-status ${kind}`;
+    }
+
+    function setMultiplayerUi(active) {
+      hintToggleBtn.style.display = active ? 'none' : '';
+      if (active) {
+        hintActive = false;
+        hintToggleBtn.classList.remove('active');
+        hintBanner.style.display = 'none';
+      }
     }
 
     function getPlayerName() {
@@ -1206,6 +1251,17 @@
       sendRoomEvent('player_state', state);
     }
 
+    function showDefeat() {
+      if (!roomJoined || !gameStarted) return;
+      gameStarted = false;
+      clearInterval(timerInterval);
+      hintActive = false;
+      hintBanner.style.display = 'none';
+      defeatMovesEl.textContent = moves;
+      defeatTimeEl.textContent = formatTime(secondsElapsed);
+      defeatModal.classList.add('open');
+    }
+
     async function connectToRoom(nextCode, action = 'join') {
       const code = normalizeRoomCode(nextCode);
       if (!code) {
@@ -1217,6 +1273,7 @@
         return;
       }
 
+      setMultiplayerUi(true);
       if (roomChannel) await supabaseClient.removeChannel(roomChannel);
       roomJoined = false;
       roomCode = code;
@@ -1245,6 +1302,7 @@
           if (!payload || payload.playerId === playerId) return;
           remotePlayers[payload.playerId] = payload;
           renderOpponentPlayers();
+          if (payload.solved) showDefeat();
         })
         .on('broadcast', { event: 'request_room_config' }, ({ payload }) => {
           if (payload?.requesterId !== playerId) broadcastRoomConfig(payload?.requesterId || null);
@@ -1845,6 +1903,11 @@
     victoryRestartBtn.addEventListener('click', () => {
       victoryModal.classList.remove('open');
       stopConfetti();
+      shuffle();
+    });
+
+    defeatRestartBtn.addEventListener('click', () => {
+      defeatModal.classList.remove('open');
       shuffle();
     });
 
