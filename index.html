@@ -1,0 +1,2410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flux - Interactive Image Sliding Puzzle</title>
+  
+  <!-- Modern typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  
+  <style>
+    :root {
+      --bg-gradient: radial-gradient(circle at 50% 50%, #1e1b4b 0%, #03001e 100%);
+      --panel-bg: rgba(15, 12, 30, 0.6);
+      --glass-border: rgba(255, 255, 255, 0.08);
+      --glass-glow: rgba(99, 102, 241, 0.15);
+      
+      --color-primary: #6366f1; /* Indigo */
+      --color-primary-glow: rgba(99, 102, 241, 0.5);
+      --color-accent: #a855f7; /* Purple */
+      --color-accent-glow: rgba(168, 85, 247, 0.5);
+      --color-neon: #ec4899; /* Pink */
+      --color-success: #10b981; /* Emerald */
+      
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      
+      --grid-size: 3;
+      --board-width: 420px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      background: var(--bg-gradient);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      overflow-x: hidden;
+      padding: 20px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 24px;
+      margin-top: 10px;
+    }
+
+    h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 3rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #fff 0%, #a855f7 50%, #ec4899 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -1px;
+      margin-bottom: 4px;
+      filter: drop-shadow(0 4px 12px rgba(168, 85, 247, 0.25));
+    }
+
+    header p {
+      color: var(--text-muted);
+      font-size: 1rem;
+      font-weight: 400;
+    }
+
+    /* Layout structure */
+    .game-container {
+      display: flex;
+      flex-direction: row;
+      gap: 32px;
+      max-width: 1000px;
+      width: 100%;
+      align-items: flex-start;
+      justify-content: center;
+    }
+
+    @media (max-width: 900px) {
+      .game-container {
+        flex-direction: column;
+        align-items: center;
+      }
+      :root {
+        --board-width: 90vw;
+      }
+    }
+
+    /* Glass Panels */
+    .glass-panel {
+      background: var(--panel-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border);
+      border-radius: 24px;
+      padding: 24px;
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5),
+                  inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      position: relative;
+    }
+
+    .glass-panel::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      border-radius: 24px;
+      pointer-events: none;
+      box-shadow: 0 0 40px var(--glass-glow);
+      opacity: 0.5;
+      z-index: -1;
+    }
+
+    /* Settings Panel */
+    .settings-panel {
+      flex: 1;
+      min-width: 320px;
+      max-width: 380px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Game Main Panel */
+    .board-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+
+    /* Stats display */
+    .stats-bar {
+      display: flex;
+      justify-content: space-around;
+      width: 100%;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .stat-val {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* Puzzle Board styling */
+    .board-outer {
+      padding: 8px;
+      background: rgba(0, 0, 0, 0.4);
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      position: relative;
+    }
+
+    .puzzle-board {
+      width: var(--board-width);
+      height: var(--board-width);
+      max-width: 420px;
+      max-height: 420px;
+      position: relative;
+      overflow: hidden;
+      border-radius: 12px;
+      cursor: pointer;
+    }
+
+    .tile {
+      position: absolute;
+      width: calc(100% / var(--grid-size));
+      height: calc(100% / var(--grid-size));
+      padding: 2px;
+      transform: translate3d(calc(var(--x) * 100%), calc(var(--y) * 100%), 0);
+      transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+      user-select: none;
+      touch-action: none;
+    }
+
+    .tile-inner {
+      width: 100%;
+      height: 100%;
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+      background-image: var(--image-url);
+      background-size: calc(var(--grid-size) * 100%) calc(var(--grid-size) * 100%);
+      background-position: calc(var(--orig-x) * 100% / (var(--grid-size) - 1)) calc(var(--orig-y) * 100% / (var(--grid-size) - 1));
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .tile:hover .tile-inner {
+      border-color: var(--color-primary);
+      box-shadow: 0 0 8px var(--color-primary-glow);
+    }
+
+    .tile-number {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #fff;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(0,0,0,0.5);
+      background: rgba(0, 0, 0, 0.35);
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+
+    .show-numbers .tile-number {
+      opacity: 1;
+    }
+
+    /* Control Button Groups */
+    .section-title {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      font-weight: 700;
+    }
+
+    .btn-group {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 10px 14px;
+      color: #fff;
+      border-radius: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-family: inherit;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-1px);
+    }
+
+    .btn.active {
+      background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
+      border-color: transparent;
+      box-shadow: 0 4px 15px var(--color-primary-glow);
+    }
+
+    .btn-block {
+      grid-column: span 3;
+    }
+
+    .btn-pink {
+      background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-neon) 100%);
+      border-color: transparent;
+    }
+    .btn-pink:hover {
+      box-shadow: 0 4px 15px rgba(236, 72, 153, 0.4);
+    }
+
+    /* Thumbnail selection */
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .gallery-thumb {
+      aspect-ratio: 1;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: all 0.2s;
+      background-size: cover;
+      background-position: center;
+    }
+
+    .gallery-thumb:hover {
+      transform: scale(1.05);
+    }
+
+    .gallery-thumb.active {
+      border-color: var(--color-accent);
+      box-shadow: 0 0 10px var(--color-accent-glow);
+    }
+
+    .upload-btn-container {
+      position: relative;
+      width: 100%;
+      height: 42px;
+    }
+
+    .file-input {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    /* Shareable area */
+    .share-container {
+      margin-top: 8px;
+    }
+
+    .multiplayer-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-top: 4px;
+    }
+
+    .room-row, .room-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .room-input {
+      min-width: 0;
+      flex: 1;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      color: #fff;
+      padding: 10px 12px;
+      font: inherit;
+      outline: none;
+    }
+
+    .room-input:focus {
+      border-color: var(--color-primary);
+    }
+
+    .room-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .room-status {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      line-height: 1.35;
+    }
+
+    .room-status.online {
+      color: #6ee7b7;
+    }
+
+    .room-status.error {
+      color: #fda4af;
+    }
+
+    .live-layout {
+      width: 100%;
+      display: grid;
+      grid-template-columns: minmax(300px, 420px) minmax(210px, 1fr);
+      align-items: start;
+      gap: 20px;
+    }
+
+    .own-board-column {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .opponents-panel {
+      min-width: 0;
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    .opponents-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .opponents-count {
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      font-weight: 500;
+    }
+
+    .opponents-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+    }
+
+    .opponent-card {
+      min-width: 0;
+      padding: 10px;
+      border-radius: 14px;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    .opponent-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.78rem;
+      font-weight: 700;
+      margin-bottom: 2px;
+    }
+
+    .opponent-meta {
+      color: var(--text-muted);
+      font-size: 0.68rem;
+      margin-bottom: 8px;
+    }
+
+    .mini-board {
+      display: grid;
+      grid-template-columns: repeat(var(--mini-grid), 1fr);
+      gap: 2px;
+      width: 100%;
+      aspect-ratio: 1;
+      padding: 3px;
+      border-radius: 9px;
+      background: rgba(0, 0, 0, 0.45);
+    }
+
+    .mini-tile {
+      min-width: 0;
+      border-radius: 4px;
+      background-image: var(--mini-image);
+      background-size: calc(var(--mini-grid) * 100%) calc(var(--mini-grid) * 100%);
+      background-position: calc(var(--mini-x) * 100% / (var(--mini-grid) - 1)) calc(var(--mini-y) * 100% / (var(--mini-grid) - 1));
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .mini-empty {
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .empty-opponents {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      line-height: 1.45;
+      text-align: center;
+      padding: 22px 10px;
+    }
+
+    @media (max-width: 1100px) {
+      .live-layout {
+        grid-template-columns: 1fr;
+      }
+      .opponents-grid {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      }
+    }
+
+    /* Preview panel */
+    .preview-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .preview-box {
+      width: 120px;
+      height: 120px;
+      border-radius: 12px;
+      border: 1px solid var(--glass-border);
+      background-size: cover;
+      background-position: center;
+      position: relative;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+
+    .preview-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    /* Victory overlay */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(3, 0, 30, 0.85);
+      backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      z-index: 100;
+    }
+
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .victory-card {
+      background: linear-gradient(135deg, rgba(30, 27, 75, 0.9) 0%, rgba(15, 12, 30, 0.95) 100%);
+      border: 1px solid var(--color-accent);
+      border-radius: 32px;
+      padding: 40px;
+      max-width: 480px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 0 50px rgba(168, 85, 247, 0.3);
+      transform: scale(0.9);
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .modal-overlay.open .victory-card {
+      transform: scale(1);
+    }
+
+    .victory-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 2.5rem;
+      background: linear-gradient(to right, #ff7bca, #a855f7, #6366f1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 12px;
+    }
+
+    .victory-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 24px 0;
+    }
+
+    .victory-stat-box {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+      padding: 16px;
+    }
+
+    /* Confetti Canvas */
+    #confetti {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 99;
+    }
+
+    /* Share modal styling */
+    .share-modal-card {
+      background: linear-gradient(135deg, #1e1b4b 0%, #0c0a21 100%);
+      border: 1px solid var(--color-primary);
+      border-radius: 24px;
+      padding: 30px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 0 40px rgba(99, 102, 241, 0.3);
+    }
+
+    .share-link-input-wrapper {
+      display: flex;
+      gap: 10px;
+      margin: 16px 0;
+    }
+
+    .share-link-input {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      padding: 12px;
+      color: #fff;
+      font-family: inherit;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .share-link-input:focus {
+      border-color: var(--color-primary);
+    }
+
+    /* Toggle switches */
+    .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 48px;
+      height: 24px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: rgba(255,255,255,0.1);
+      transition: .3s;
+      border-radius: 24px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: var(--color-primary);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(24px);
+    }
+
+    /* Sound/Helper Control top bar */
+    .top-controls {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      width: 100%;
+      max-width: 832px;
+      margin-bottom: 12px;
+    }
+
+    .top-btn {
+      background: var(--panel-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      padding: 8px 12px;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+    }
+
+    .top-btn:hover {
+      color: #fff;
+      border-color: rgba(255,255,255,0.2);
+    }
+
+    .top-btn.active {
+      color: var(--color-neon);
+      border-color: var(--color-neon);
+    }
+
+    /* Hint mode highlights */
+    .hint-highlight .tile-inner {
+      border-color: #eab308 !important;
+      box-shadow: 0 0 18px rgba(234, 179, 8, 0.8) !important;
+      animation: pulse-gold 1.2s infinite alternate;
+    }
+
+    @keyframes pulse-gold {
+      0% {
+        box-shadow: 0 0 6px rgba(234, 179, 8, 0.4);
+        transform: scale(1);
+      }
+      100% {
+        box-shadow: 0 0 18px rgba(234, 179, 8, 1);
+        transform: scale(1.02);
+      }
+    }
+
+    .hint-banner {
+      width: 100%;
+      background: linear-gradient(135deg, rgba(234, 179, 8, 0.12) 0%, rgba(99, 102, 241, 0.12) 100%);
+      border: 1.5px solid #eab308;
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 16px;
+      text-align: center;
+      box-shadow: 0 4px 15px rgba(234, 179, 8, 0.1);
+      backdrop-filter: blur(8px);
+      display: none;
+    }
+
+    /* Footer styling */
+    footer {
+      margin-top: 40px;
+      margin-bottom: 20px;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      text-align: center;
+    }
+
+    footer a {
+      color: var(--color-primary);
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>FLUX</h1>
+    <p>Upload, slide, and share picture puzzles with friends</p>
+  </header>
+
+  <!-- Sound and Number top utilities -->
+  <div class="top-controls">
+    <button class="top-btn" id="hint-toggle-btn">
+      💡 Show Hint
+    </button>
+    <button class="top-btn" id="sound-toggle-btn">
+      <span id="sound-icon">🔊</span> Sound On
+    </button>
+    <button class="top-btn" id="numbers-toggle-btn">
+      🔢 Show Guides
+    </button>
+  </div>
+
+  <div class="game-container">
+    
+    <!-- LEFT SIDE: Settings & Gallery -->
+    <div class="glass-panel settings-panel">
+      <!-- Difficulty -->
+      <div>
+        <div class="section-title">Difficulty</div>
+        <div class="btn-group">
+          <button class="btn active" data-grid="3">3x3</button>
+          <button class="btn" data-grid="4">4x4</button>
+          <button class="btn" data-grid="5">5x5</button>
+        </div>
+      </div>
+
+      <!-- Image Source Selection -->
+      <div>
+        <div class="section-title">Gallery Presets</div>
+        <div class="gallery-grid">
+          <div class="gallery-thumb active" style="background-image: url('https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=150&auto=format&fit=crop')" data-url="https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=500&auto=format&fit=crop"></div>
+          <div class="gallery-thumb" style="background-image: url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=150&auto=format&fit=crop')" data-url="https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=500&auto=format&fit=crop"></div>
+          <div class="gallery-thumb" style="background-image: url('https://images.unsplash.com/photo-1541701494587-cb58502866ab?q=80&w=150&auto=format&fit=crop')" data-url="https://images.unsplash.com/photo-1541701494587-cb58502866ab?q=80&w=500&auto=format&fit=crop"></div>
+          <div class="gallery-thumb" id="gradient-thumb-btn" style="background: linear-gradient(135deg, #ec4899, #8b5cf6, #06b6d4)" title="Generate Random Gradient"></div>
+        </div>
+      </div>
+
+      <!-- Custom Upload -->
+      <div>
+        <div class="section-title">Upload Custom</div>
+        <div class="upload-btn-container">
+          <button class="btn btn-block" style="pointer-events: none;">📂 Choose Image...</button>
+          <input type="file" id="file-uploader" class="file-input" accept="image/*">
+        </div>
+      </div>
+
+      <!-- Lightweight Multiplayer -->
+      <div class="multiplayer-panel">
+        <div class="section-title">Multiplayer</div>
+        <input class="room-input" id="player-name-input" maxlength="18" placeholder="Your name">
+        <div class="room-row">
+          <input class="room-input" id="room-code-input" maxlength="8" placeholder="Room code">
+          <button class="btn active" id="join-room-btn">Join</button>
+        </div>
+        <div class="room-actions">
+          <button class="btn" id="create-room-btn" style="flex: 1;">Create room</button>
+          <button class="btn" id="copy-room-btn" style="flex: 1;" disabled>Copy invite</button>
+        </div>
+        <div class="room-status" id="room-status">Offline until you create or join a room.</div>
+      </div>
+
+      <!-- Sharing Action -->
+      <div class="share-container">
+        <button class="btn btn-block btn-pink" id="share-game-btn">🔗 Share / Invite</button>
+      </div>
+
+      <!-- Live Reference Preview -->
+      <div class="preview-container">
+        <div class="preview-box" id="reference-preview"></div>
+        <div class="preview-label">Target Image</div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT SIDE: Board & Statistics -->
+    <div class="glass-panel board-panel">
+      
+      <!-- Hint Direction Banner -->
+      <div class="hint-banner" id="hint-banner">
+        <h4 style="font-family: 'Space Grotesk', sans-serif; font-size: 0.95rem; font-weight: 700; color: #eab308; margin-bottom: 4px; display: flex; align-items: center; justify-content: center; gap: 6px;">💡 Hint Engine Active</h4>
+        <p id="hint-instruction-text" style="font-size: 0.85rem; color: #fff; line-height: 1.4;"></p>
+      </div>
+
+      <!-- Score Stats -->
+      <div class="stats-bar">
+        <div class="stat-item">
+          <span class="stat-label">Moves</span>
+          <span class="stat-val" id="moves-val">0</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Time</span>
+          <span class="stat-val" id="time-val">00:00</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Best</span>
+          <span class="stat-val" id="best-val">--</span>
+        </div>
+      </div>
+
+      <!-- Puzzle Board Area -->
+      <div class="live-layout">
+        <div class="own-board-column">
+          <div class="board-outer">
+            <div class="puzzle-board" id="puzzle-board">
+              <!-- Tiles will be dynamically injected here -->
+            </div>
+          </div>
+
+          <!-- Reset/Reshuffle buttons -->
+          <div style="width: 100%; display: flex; gap: 12px;">
+            <button class="btn" style="flex: 1;" id="shuffle-btn">🔄 Reshuffle</button>
+            <button class="btn" style="flex: 1;" id="peek-btn">👁️ Hold to Peek</button>
+          </div>
+        </div>
+
+        <div class="opponents-panel">
+          <div class="opponents-heading">
+            <span>Live opponents</span>
+            <span class="opponents-count" id="opponents-count">0 in room</span>
+          </div>
+          <div class="opponents-grid" id="opponents-grid">
+            <div class="empty-opponents">Create or join a room to see everyone’s progress here.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <footer>
+    Made with ❤️ • Shift tiles using click, swipe, or Arrow/WASD keys.
+  </footer>
+
+  <!-- MODALS -->
+
+  <!-- Victory Overlay -->
+  <div class="modal-overlay" id="victory-modal">
+    <div class="victory-card">
+      <h2 class="victory-title">Victory! 🎉</h2>
+      <p>Incredible job! You solved the puzzle and restored the image.</p>
+      
+      <div class="victory-stats">
+        <div class="victory-stat-box">
+          <div class="stat-label">Moves</div>
+          <div id="victory-moves" class="stat-val" style="color: var(--color-accent);">0</div>
+        </div>
+        <div class="victory-stat-box">
+          <div class="stat-label">Time Elapsed</div>
+          <div id="victory-time" class="stat-val" style="color: var(--color-neon);">00:00</div>
+        </div>
+      </div>
+
+      <button class="btn btn-block btn-pink" id="victory-restart-btn" style="padding: 14px;">Play Again</button>
+    </div>
+  </div>
+
+  <!-- Share URL Link Overlay -->
+  <div class="modal-overlay" id="share-modal">
+    <div class="share-modal-card">
+      <h2 class="victory-title" style="font-size: 1.8rem; margin-bottom: 8px;">Share Puzzle</h2>
+      <p id="share-description" style="color: var(--text-muted); font-size: 0.9rem;">Copy this link and send it to a friend! It contains your current image and difficulty selection.</p>
+      
+      <div class="share-link-input-wrapper">
+        <input type="text" class="share-link-input" id="share-url-text" readonly>
+        <button class="btn active" id="copy-link-btn" style="padding: 0 18px;">Copy</button>
+      </div>
+
+      <button class="btn btn-block" id="close-share-btn">Close</button>
+    </div>
+  </div>
+
+  <!-- Confetti Canvas -->
+  <canvas id="confetti"></canvas>
+
+  <script>
+    // --- STATE CONFIGURATION ---
+    let gridSize = 3;
+    let originalImageSrc = 'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=500&auto=format&fit=crop';
+    let loadedImageSrc = ''; // Processed compressed image
+    let board = []; // Holds index corresponding to tile. (0 to N-1)
+    let emptyIndex = 0; // Where the gap is
+    let moves = 0;
+    let secondsElapsed = 0;
+    let timerInterval = null;
+    let gameStarted = false;
+    let isPeeking = false;
+    let showGuideNumbers = false;
+    let soundEnabled = true;
+    let hintActive = false;
+
+    // Supabase Realtime is used only for ephemeral room state; no database tables are needed.
+    const SUPABASE_URL = 'https://fyxxajqesnpcddsejlig.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5eHhhanFlc25wY2Rkc2VqbGlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NjY1MjEsImV4cCI6MjEwMDE0MjUyMX0.tZeLB4xPFLFNew6yaLWYgWvuDF49csOLpjlA12XFsuM';
+    const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      realtime: { params: { eventsPerSecond: 10 } }
+    });
+    const playerId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+    let roomChannel = null;
+    let roomCode = '';
+    let remotePlayers = {};
+    let lastSentState = '';
+    
+    // Audio synthesis setup
+    let audioCtx = null;
+
+    // DOM Elements
+    const boardEl = document.getElementById('puzzle-board');
+    const movesEl = document.getElementById('moves-val');
+    const timeEl = document.getElementById('time-val');
+    const bestEl = document.getElementById('best-val');
+    const referencePreview = document.getElementById('reference-preview');
+    const fileUploader = document.getElementById('file-uploader');
+    const shuffleBtn = document.getElementById('shuffle-btn');
+    const peekBtn = document.getElementById('peek-btn');
+    const soundToggleBtn = document.getElementById('sound-toggle-btn');
+    const numbersToggleBtn = document.getElementById('numbers-toggle-btn');
+    const victoryModal = document.getElementById('victory-modal');
+    const victoryMovesEl = document.getElementById('victory-moves');
+    const victoryTimeEl = document.getElementById('victory-time');
+    const victoryRestartBtn = document.getElementById('victory-restart-btn');
+    
+    const shareGameBtn = document.getElementById('share-game-btn');
+    const shareModal = document.getElementById('share-modal');
+    const shareDescription = document.getElementById('share-description');
+    const shareUrlText = document.getElementById('share-url-text');
+    const copyLinkBtn = document.getElementById('copy-link-btn');
+    const closeShareBtn = document.getElementById('close-share-btn');
+    const playerNameInput = document.getElementById('player-name-input');
+    const roomCodeInput = document.getElementById('room-code-input');
+    const joinRoomBtn = document.getElementById('join-room-btn');
+    const createRoomBtn = document.getElementById('create-room-btn');
+    const copyRoomBtn = document.getElementById('copy-room-btn');
+    const roomStatus = document.getElementById('room-status');
+    const opponentsGrid = document.getElementById('opponents-grid');
+    const opponentsCount = document.getElementById('opponents-count');
+    
+    const difficultyButtons = document.querySelectorAll('[data-grid]');
+    const galleryThumbs = document.querySelectorAll('.gallery-thumb');
+
+    // Hint DOM Elements
+    const hintToggleBtn = document.getElementById('hint-toggle-btn');
+    const hintBanner = document.getElementById('hint-banner');
+    const hintInstructionText = document.getElementById('hint-instruction-text');
+
+    // Confetti canvas setup
+    const confettiCanvas = document.getElementById('confetti');
+    const confettiCtx = confettiCanvas.getContext('2d');
+    let confettiActive = false;
+    let particles = [];
+
+    // --- SOUND ENGINE (Web Audio API) ---
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    function playSound(type) {
+      if (!soundEnabled) return;
+      initAudio();
+      if (!audioCtx) return;
+
+      const now = audioCtx.currentTime;
+      const masterGain = audioCtx.createGain();
+      masterGain.connect(audioCtx.destination);
+
+      if (type === 'slide') {
+        const osc = audioCtx.createOscillator();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(140, now);
+        osc.frequency.exponentialRampToValueAtTime(320, now + 0.12);
+        
+        masterGain.gain.setValueAtTime(0.12, now);
+        masterGain.gain.linearRampToValueAtTime(0.01, now + 0.12);
+        
+        osc.connect(masterGain);
+        osc.start(now);
+        osc.stop(now + 0.12);
+      } else if (type === 'click') {
+        const osc = audioCtx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(500, now);
+        osc.frequency.exponentialRampToValueAtTime(650, now + 0.06);
+        
+        masterGain.gain.setValueAtTime(0.06, now);
+        masterGain.gain.linearRampToValueAtTime(0.01, now + 0.06);
+        
+        osc.connect(masterGain);
+        osc.start(now);
+        osc.stop(now + 0.06);
+      } else if (type === 'victory') {
+        // Playful C Major scale arpeggio
+        const scale = [261.63, 329.63, 392.00, 523.25, 659.25, 783.99, 1046.50];
+        scale.forEach((freq, i) => {
+          const osc = audioCtx.createOscillator();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now + i * 0.08);
+          
+          const gainNode = audioCtx.createGain();
+          gainNode.gain.setValueAtTime(0.1, now + i * 0.08);
+          gainNode.gain.linearRampToValueAtTime(0.005, now + i * 0.08 + 0.25);
+          
+          osc.connect(gainNode);
+          gainNode.connect(masterGain);
+          
+          osc.start(now + i * 0.08);
+          osc.stop(now + i * 0.08 + 0.25);
+        });
+      }
+    }
+
+    // --- LIGHTWEIGHT REAL-TIME ROOMS ---
+    function setRoomStatus(message, kind = '') {
+      roomStatus.textContent = message;
+      roomStatus.className = `room-status ${kind}`;
+    }
+
+    function getPlayerName() {
+      const name = playerNameInput.value.trim().slice(0, 18);
+      const fallback = `Player ${playerId.slice(0, 4)}`;
+      const finalName = name || fallback;
+      playerNameInput.value = finalName;
+      localStorage.setItem('flux_player_name', finalName);
+      return finalName;
+    }
+
+    function normalizeRoomCode(value) {
+      return value.trim().replace(/[^a-z0-9]/gi, '').slice(0, 8).toUpperCase();
+    }
+
+    function updateRoomUrl() {
+      const url = new URL(window.location.href);
+      if (roomCode) url.searchParams.set('room', roomCode);
+      else url.searchParams.delete('room');
+      history.replaceState(null, '', url.toString());
+    }
+
+    function formatTime(totalSeconds) {
+      const mins = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+      const secs = (totalSeconds % 60).toString().padStart(2, '0');
+      return `${mins}:${secs}`;
+    }
+
+    function renderOpponentPlayers() {
+      const players = Object.values(remotePlayers);
+      opponentsGrid.innerHTML = '';
+
+      if (!players.length) {
+        opponentsGrid.innerHTML = '<div class="empty-opponents">No opponents yet. Send the invite link to a friend.</div>';
+        return;
+      }
+
+      players.forEach(state => {
+        const size = Number(state.gridSize) || 3;
+        const total = size * size;
+        const card = document.createElement('div');
+        card.className = 'opponent-card';
+
+        const name = document.createElement('div');
+        name.className = 'opponent-name';
+        name.textContent = state.name || 'Opponent';
+
+        const meta = document.createElement('div');
+        meta.className = 'opponent-meta';
+        meta.textContent = `${state.solved ? 'Solved' : `${state.moves || 0} moves`} • ${formatTime(state.secondsElapsed || 0)}`;
+
+        const miniBoard = document.createElement('div');
+        miniBoard.className = 'mini-board';
+        miniBoard.style.setProperty('--mini-grid', size);
+
+        const remoteBoard = Array.isArray(state.board) ? state.board : [];
+        for (let position = 0; position < total; position++) {
+          const value = remoteBoard[position];
+          const tile = document.createElement('div');
+          if (value === total - 1 || value === undefined) {
+            tile.className = 'mini-empty';
+          } else {
+            tile.className = 'mini-tile';
+            tile.style.setProperty('--mini-image', `url('${loadedImageSrc}')`);
+            tile.style.setProperty('--mini-x', value % size);
+            tile.style.setProperty('--mini-y', Math.floor(value / size));
+          }
+          miniBoard.appendChild(tile);
+        }
+
+        card.append(name, meta, miniBoard);
+        opponentsGrid.appendChild(card);
+      });
+    }
+
+    function refreshPresence() {
+      if (!roomChannel) return;
+      const presence = roomChannel.presenceState();
+      const liveIds = new Set(Object.keys(presence));
+      Object.entries(presence).forEach(([id, entries]) => {
+        if (id !== playerId && entries.length) {
+          remotePlayers[id] = entries[entries.length - 1];
+        }
+      });
+      Object.keys(remotePlayers).forEach(id => {
+        if (!liveIds.has(id)) delete remotePlayers[id];
+      });
+      const count = Object.keys(presence).length;
+      opponentsCount.textContent = `${count} in room`;
+      renderOpponentPlayers();
+    }
+
+    function broadcastConfig() {
+      if (!roomChannel) return;
+      roomChannel.send({
+        type: 'broadcast',
+        event: 'room_config',
+        payload: {
+          playerId,
+          gridSize,
+          image: originalImageSrc.startsWith('data:') ? null : originalImageSrc
+        }
+      });
+    }
+
+    function isSolved() {
+      return board.every((value, index) => value === index);
+    }
+
+    function broadcastState(force = false) {
+      if (!roomChannel || !board.length) return;
+      const state = {
+        playerId,
+        name: getPlayerName(),
+        board: [...board],
+        gridSize,
+        moves,
+        secondsElapsed,
+        solved: isSolved(),
+        sentAt: Date.now()
+      };
+      const signature = JSON.stringify({ ...state, sentAt: 0 });
+      if (!force && signature === lastSentState) return;
+      lastSentState = signature;
+      roomChannel.send({ type: 'broadcast', event: 'player_state', payload: state });
+      roomChannel.track(state);
+    }
+
+    async function connectToRoom(nextCode) {
+      const code = normalizeRoomCode(nextCode);
+      if (!code) {
+        setRoomStatus('Enter a room code first.', 'error');
+        return;
+      }
+      if (!supabaseClient) {
+        setRoomStatus('Realtime could not load. Check the network connection.', 'error');
+        return;
+      }
+
+      if (roomChannel) await supabaseClient.removeChannel(roomChannel);
+      roomCode = code;
+      roomCodeInput.value = code;
+      updateRoomUrl();
+      remotePlayers = {};
+      lastSentState = '';
+      copyRoomBtn.disabled = true;
+      refreshPresence();
+      setRoomStatus(`Connecting to room ${code}…`);
+
+      roomChannel = supabaseClient.channel(`flux-room:${code}`, {
+        config: { presence: { key: playerId }, broadcast: { self: false } }
+      });
+
+      roomChannel
+        .on('presence', { event: 'sync' }, refreshPresence)
+        .on('presence', { event: 'join' }, refreshPresence)
+        .on('presence', { event: 'leave' }, refreshPresence)
+        .on('broadcast', { event: 'player_state' }, ({ payload }) => {
+          if (!payload || payload.playerId === playerId) return;
+          remotePlayers[payload.playerId] = payload;
+          renderOpponentPlayers();
+        })
+        .on('broadcast', { event: 'request_state' }, () => {
+          broadcastConfig();
+          broadcastState(true);
+        })
+        .on('broadcast', { event: 'room_config' }, ({ payload }) => {
+          if (!payload || payload.playerId === playerId) return;
+          if (!gameStarted && payload.gridSize && payload.gridSize !== gridSize) {
+            gridSize = Number(payload.gridSize);
+            difficultyButtons.forEach(btn => btn.classList.toggle('active', Number(btn.dataset.grid) === gridSize));
+          }
+          if (!gameStarted && payload.image && payload.image !== originalImageSrc) {
+            originalImageSrc = payload.image;
+            processImage(originalImageSrc);
+          }
+        });
+        .on('presence', { event: 'leave' }, refreshPresence);
+
+      roomChannel.subscribe(async status => {
+        if (status === 'SUBSCRIBED') {
+          await roomChannel.track({ playerId, name: getPlayerName() });
+          copyRoomBtn.disabled = false;
+          setRoomStatus(`Live room ${code}. Share the invite link.`, 'online');
+          refreshPresence();
+          roomChannel.send({ type: 'broadcast', event: 'request_state', payload: { playerId } });
+          broadcastConfig();
+          broadcastState(true);
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setRoomStatus('Could not connect to that room.', 'error');
+        }
+      });
+    }
+
+    function createRoomCode() {
+      return Math.random().toString(36).slice(2, 8).toUpperCase();
+    }
+
+    // --- BOARD SELECTION & PARSING URLS ---
+    window.addEventListener('DOMContentLoaded', () => {
+      playerNameInput.value = localStorage.getItem('flux_player_name') || '';
+      const requestedRoom = new URLSearchParams(window.location.search).get('room');
+      if (requestedRoom) connectToRoom(requestedRoom);
+      loadBestScore();
+      
+      // Check for incoming share link
+      const hash = window.location.hash.substring(1);
+      if (hash) {
+        const params = new URLSearchParams(hash);
+        const gridParam = params.get('grid');
+        const imgParam = params.get('img');
+        const urlParam = params.get('url');
+
+        if (gridParam) {
+          gridSize = parseInt(gridParam, 10);
+          difficultyButtons.forEach(btn => {
+            btn.classList.toggle('active', parseInt(btn.dataset.grid, 10) === gridSize);
+          });
+        }
+
+        if (imgParam) {
+          // Loaded Base64 image
+          originalImageSrc = 'data:image/jpeg;base64,' + imgParam;
+          // Un-select gallery thumbs
+          galleryThumbs.forEach(t => t.classList.remove('active'));
+          processImage(originalImageSrc);
+          return;
+        } else if (urlParam) {
+          originalImageSrc = urlParam;
+          // Match standard gallery thumbs or reset
+          let found = false;
+          galleryThumbs.forEach(t => {
+            if (t.dataset.url === urlParam) {
+              t.classList.add('active');
+              found = true;
+            } else {
+              t.classList.remove('active');
+            }
+          });
+          processImage(originalImageSrc);
+          return;
+        }
+      }
+
+      // Default load
+      processImage(originalImageSrc);
+    });
+
+    // Handle hash change events
+    window.addEventListener('hashchange', () => {
+      const hash = window.location.hash.substring(1);
+      if (hash) {
+        const params = new URLSearchParams(hash);
+        const imgParam = params.get('img');
+        const urlParam = params.get('url');
+        const gridParam = params.get('grid');
+
+        if (gridParam) {
+          gridSize = parseInt(gridParam, 10);
+          difficultyButtons.forEach(btn => {
+            btn.classList.toggle('active', parseInt(btn.dataset.grid, 10) === gridSize);
+          });
+        }
+
+        if (imgParam) {
+          const newSrc = 'data:image/jpeg;base64,' + imgParam;
+          if (originalImageSrc !== newSrc) {
+            originalImageSrc = newSrc;
+            galleryThumbs.forEach(t => t.classList.remove('active'));
+            processImage(originalImageSrc);
+          }
+        } else if (urlParam) {
+          if (originalImageSrc !== urlParam) {
+            originalImageSrc = urlParam;
+            processImage(originalImageSrc);
+          }
+        }
+      }
+    });
+
+    // LocalStorage best score handler
+    function loadBestScore() {
+      const best = localStorage.getItem(`best_score_${gridSize}`);
+      if (best) {
+        bestEl.textContent = best;
+      } else {
+        bestEl.textContent = '--';
+      }
+    }
+
+    // Save best score handler
+    function saveBestScore() {
+      const best = localStorage.getItem(`best_score_${gridSize}`);
+      if (!best || moves < parseInt(best, 10)) {
+        localStorage.setItem(`best_score_${gridSize}`, moves);
+        bestEl.textContent = moves;
+      }
+    }
+
+    // --- IMAGE PRE-PROCESSING (Crop to Square & Compress for Hash URL sharing) ---
+    function processImage(src) {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = function() {
+        const size = 450; // Standard optimized render canvas size
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        
+        // Square center crop
+        const minDim = Math.min(img.width, img.height);
+        const sx = (img.width - minDim) / 2;
+        const sy = (img.height - minDim) / 2;
+        
+        ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
+        
+        // Output compressed format
+        loadedImageSrc = canvas.toDataURL('image/jpeg', 0.8);
+        referencePreview.style.backgroundImage = `url('${loadedImageSrc}')`;
+        
+        setupBoard();
+        renderOpponentPlayers();
+      };
+      
+      img.onerror = function() {
+        // Fallback to gradient if image fails
+        createRandomGradient();
+      };
+
+      img.src = src;
+    }
+
+    // Generate random offline/fallback gradient using canvas
+    function createRandomGradient() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 450;
+      canvas.height = 450;
+      const ctx = canvas.getContext('2d');
+
+      const hue1 = Math.floor(Math.random() * 360);
+      const hue2 = (hue1 + 120 + Math.floor(Math.random() * 60)) % 360;
+
+      const grad = ctx.createLinearGradient(0, 0, 450, 450);
+      grad.addColorStop(0, `hsl(${hue1}, 85%, 60%)`);
+      grad.addColorStop(1, `hsl(${hue2}, 90%, 45%)`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 450, 450);
+
+      // Add cool abstract glowing spheres
+      for (let i = 0; i < 4; i++) {
+        const cx = Math.random() * 450;
+        const cy = Math.random() * 450;
+        const radius = Math.random() * 150 + 80;
+        const radGrad = ctx.createRadialGradient(cx, cy, 10, cx, cy, radius);
+        radGrad.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
+        radGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = radGrad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      loadedImageSrc = canvas.toDataURL('image/jpeg', 0.8);
+      referencePreview.style.backgroundImage = `url('${loadedImageSrc}')`;
+      setupBoard();
+      renderOpponentPlayers();
+    }
+
+    // --- GAME LOGIC ENGINE ---
+    function setupBoard() {
+      // Set grid size globally
+      document.documentElement.style.setProperty('--grid-size', gridSize);
+      
+      const numTiles = gridSize * gridSize;
+      board = [];
+      for (let i = 0; i < numTiles; i++) {
+        board.push(i);
+      }
+      emptyIndex = numTiles - 1;
+
+      renderBoard();
+      resetStats();
+      shuffle();
+    }
+
+    function renderBoard() {
+      boardEl.innerHTML = '';
+      const numTiles = gridSize * gridSize;
+
+      for (let v = 0; v < numTiles; v++) {
+        // N-1 is empty space, we don't render it visually
+        if (v === numTiles - 1) continue;
+
+        const tile = document.createElement('div');
+        tile.className = 'tile';
+        tile.dataset.value = v;
+
+        // Position coordinates
+        const origX = v % gridSize;
+        const origY = Math.floor(v / gridSize);
+
+        const inner = document.createElement('div');
+        inner.className = 'tile-inner';
+        inner.style.setProperty('--image-url', `url('${loadedImageSrc}')`);
+        inner.style.setProperty('--orig-x', origX);
+        inner.style.setProperty('--orig-y', origY);
+
+        const numberLabel = document.createElement('div');
+        numberLabel.className = 'tile-number';
+        numberLabel.textContent = v + 1;
+
+        inner.appendChild(numberLabel);
+        tile.appendChild(inner);
+
+        // Click/Touch Handler
+        tile.addEventListener('click', () => {
+          if (isPeeking) return;
+          const currIdx = board.indexOf(v);
+          tryMove(currIdx);
+        });
+
+        // Touch swipe tracking variables
+        let touchStartX = 0;
+        let touchStartY = 0;
+        
+        tile.addEventListener('touchstart', (e) => {
+          touchStartX = e.touches[0].clientX;
+          touchStartY = e.touches[0].clientY;
+        }, {passive: true});
+
+        tile.addEventListener('touchend', (e) => {
+          if (isPeeking) return;
+          const diffX = e.changedTouches[0].clientX - touchStartX;
+          const diffY = e.changedTouches[0].clientY - touchStartY;
+          
+          const swipeThreshold = 30; // Min px swipe
+          if (Math.abs(diffX) > Math.abs(diffY)) {
+            if (Math.abs(diffX) > swipeThreshold) {
+              const currIdx = board.indexOf(v);
+              const col = currIdx % gridSize;
+              const emptyCol = emptyIndex % gridSize;
+              
+              if (diffX > 0 && col === emptyCol - 1 && Math.floor(currIdx / gridSize) === Math.floor(emptyIndex / gridSize)) {
+                // Swipe right into empty space
+                tryMove(currIdx);
+              } else if (diffX < 0 && col === emptyCol + 1 && Math.floor(currIdx / gridSize) === Math.floor(emptyIndex / gridSize)) {
+                // Swipe left into empty space
+                tryMove(currIdx);
+              }
+            }
+          } else {
+            if (Math.abs(diffY) > swipeThreshold) {
+              const currIdx = board.indexOf(v);
+              const row = Math.floor(currIdx / gridSize);
+              const emptyRow = Math.floor(emptyIndex / gridSize);
+              
+              if (diffY > 0 && row === emptyRow - 1 && currIdx % gridSize === emptyIndex % gridSize) {
+                // Swipe down into empty space
+                tryMove(currIdx);
+              } else if (diffY < 0 && row === emptyRow + 1 && currIdx % gridSize === emptyIndex % gridSize) {
+                // Swipe up into empty space
+                tryMove(currIdx);
+              }
+            }
+          }
+        }, {passive: true});
+
+        boardEl.appendChild(tile);
+      }
+
+      updateTilePositions();
+    }
+
+    function updateTilePositions() {
+      // Find element and set `--x` & `--y` custom CSS vars
+      const numTiles = gridSize * gridSize;
+      for (let idx = 0; idx < numTiles; idx++) {
+        const val = board[idx];
+        if (val === numTiles - 1) continue; // Skip empty space
+        
+        const tileEl = boardEl.querySelector(`[data-value="${val}"]`);
+        if (tileEl) {
+          tileEl.style.setProperty('--x', idx % gridSize);
+          tileEl.style.setProperty('--y', Math.floor(idx / gridSize));
+        }
+      }
+    }
+
+    function tryMove(idx) {
+      if (isValidMove(idx)) {
+        // Swap values in state array
+        const temp = board[idx];
+        board[idx] = board[emptyIndex];
+        board[emptyIndex] = temp;
+
+        emptyIndex = idx;
+        
+        moves++;
+        movesEl.textContent = moves;
+        
+        playSound('slide');
+        updateTilePositions();
+
+        // Update real-time hint
+        if (hintActive) {
+          updateHint();
+        }
+
+        if (gameStarted) {
+          checkVictory();
+        }
+        broadcastState(true);
+      }
+    }
+
+    function isValidMove(idx) {
+      const r1 = Math.floor(idx / gridSize);
+      const c1 = idx % gridSize;
+      const r2 = Math.floor(emptyIndex / gridSize);
+      const c2 = emptyIndex % gridSize;
+
+      return Math.abs(r1 - r2) + Math.abs(c1 - c2) === 1;
+    }
+
+    // Solvability via random walk shuffle
+    function shuffle() {
+      gameStarted = false;
+      const shuffleSteps = gridSize * gridSize * 30; // Proportional depth
+      
+      let prevIdx = -1;
+      for (let step = 0; step < shuffleSteps; step++) {
+        const validIndices = [];
+        const rEmpty = Math.floor(emptyIndex / gridSize);
+        const cEmpty = emptyIndex % gridSize;
+
+        // Find all adjacent cells
+        const directions = [
+          {r: -1, c: 0}, {r: 1, c: 0},
+          {r: 0, c: -1}, {r: 0, c: 1}
+        ];
+
+        directions.forEach(d => {
+          const r = rEmpty + d.r;
+          const c = cEmpty + d.c;
+          if (r >= 0 && r < gridSize && c >= 0 && c < gridSize) {
+            const idx = r * gridSize + c;
+            if (idx !== prevIdx) { // Avoid direct backtracking
+              validIndices.push(idx);
+            }
+          }
+        });
+
+        // Pick one at random
+        const chosenIdx = validIndices[Math.floor(Math.random() * validIndices.length)];
+        
+        // Swap values
+        const temp = board[chosenIdx];
+        board[chosenIdx] = board[emptyIndex];
+        board[emptyIndex] = temp;
+        
+        prevIdx = emptyIndex;
+        emptyIndex = chosenIdx;
+      }
+
+      updateTilePositions();
+      resetStats();
+      startTimer();
+      gameStarted = true;
+
+      // Update real-time hint
+      if (hintActive) {
+        updateHint();
+      }
+      broadcastState(true);
+    }
+
+    // --- TIMING AND SCORING ---
+    function resetStats() {
+      moves = 0;
+      movesEl.textContent = moves;
+      secondsElapsed = 0;
+      timeEl.textContent = '00:00';
+      clearInterval(timerInterval);
+      loadBestScore();
+      broadcastState(true);
+    }
+
+    function startTimer() {
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        secondsElapsed++;
+        timeEl.textContent = formatTime(secondsElapsed);
+        broadcastState();
+      }, 1000);
+    }
+
+    function checkVictory() {
+      // Check if array elements are index-matched
+      let solved = true;
+      for (let i = 0; i < board.length; i++) {
+        if (board[i] !== i) {
+          solved = false;
+          break;
+        }
+      }
+
+      if (solved) {
+        gameStarted = false;
+        clearInterval(timerInterval);
+        
+        saveBestScore();
+        playSound('victory');
+        triggerConfetti();
+
+        // Populate and open victory modal
+        const mins = Math.floor(secondsElapsed / 60).toString().padStart(2, '0');
+        const secs = (secondsElapsed % 60).toString().padStart(2, '0');
+        victoryMovesEl.textContent = moves;
+        victoryTimeEl.textContent = `${mins}:${secs}`;
+        
+        setTimeout(() => {
+          victoryModal.classList.add('open');
+        }, 600);
+      }
+    }
+
+    // --- INPUT CONTROLS (Keyboard WASD / Arrows) ---
+    document.addEventListener('keydown', (e) => {
+      if (!gameStarted || isPeeking) return;
+
+      const rEmpty = Math.floor(emptyIndex / gridSize);
+      const cEmpty = emptyIndex % gridSize;
+      let targetIdx = -1;
+
+      switch(e.key) {
+        case 'ArrowUp':
+        case 'w':
+        case 'W':
+          if (rEmpty + 1 < gridSize) targetIdx = (rEmpty + 1) * gridSize + cEmpty;
+          break;
+        case 'ArrowDown':
+        case 's':
+        case 'S':
+          if (rEmpty - 1 >= 0) targetIdx = (rEmpty - 1) * gridSize + cEmpty;
+          break;
+        case 'ArrowLeft':
+        case 'a':
+        case 'A':
+          if (cEmpty + 1 < gridSize) targetIdx = rEmpty * gridSize + (cEmpty + 1);
+          break;
+        case 'ArrowRight':
+        case 'd':
+        case 'D':
+          if (cEmpty - 1 >= 0) targetIdx = rEmpty * gridSize + (cEmpty - 1);
+          break;
+      }
+
+      if (targetIdx !== -1) {
+        e.preventDefault();
+        tryMove(targetIdx);
+      }
+    });
+
+    // --- UTILITIES & MODAL Toggles ---
+
+    // Toggle Sound Button
+    soundToggleBtn.addEventListener('click', () => {
+      soundEnabled = !soundEnabled;
+      initAudio();
+      soundToggleBtn.classList.toggle('active', !soundEnabled);
+      soundToggleBtn.innerHTML = soundEnabled ? '🔊 Sound On' : '🔇 Sound Muted';
+      playSound('click');
+    });
+
+    // Toggle Guides Button
+    numbersToggleBtn.addEventListener('click', () => {
+      showGuideNumbers = !showGuideNumbers;
+      boardEl.classList.toggle('show-numbers', showGuideNumbers);
+      numbersToggleBtn.classList.toggle('active', showGuideNumbers);
+      playSound('click');
+    });
+
+    // Hold to Peek utility
+    const startPeek = () => {
+      if (!gameStarted) return;
+      isPeeking = true;
+      playSound('click');
+      // Render clean solved image
+      boardEl.innerHTML = '';
+      const size = gridSize * gridSize;
+      const fullPicTile = document.createElement('div');
+      fullPicTile.className = 'tile';
+      fullPicTile.style.width = '100%';
+      fullPicTile.style.height = '100%';
+      fullPicTile.style.transform = 'none';
+      
+      const inner = document.createElement('div');
+      inner.className = 'tile-inner';
+      inner.style.setProperty('--image-url', `url('${loadedImageSrc}')`);
+      inner.style.setProperty('--orig-x', '0');
+      inner.style.setProperty('--orig-y', '0');
+      inner.style.backgroundSize = '100% 100%';
+      fullPicTile.appendChild(inner);
+      boardEl.appendChild(fullPicTile);
+    };
+
+    const stopPeek = () => {
+      if (!isPeeking) return;
+      isPeeking = false;
+      renderBoard();
+    };
+
+    peekBtn.addEventListener('mousedown', startPeek);
+    peekBtn.addEventListener('mouseup', stopPeek);
+    peekBtn.addEventListener('mouseleave', stopPeek);
+    peekBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      startPeek();
+    });
+    peekBtn.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      stopPeek();
+    });
+
+    // Difficulty selection
+    difficultyButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        playSound('click');
+        difficultyButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        gridSize = parseInt(btn.dataset.grid, 10);
+        setupBoard();
+      });
+    });
+
+    // Gallery selection
+    galleryThumbs.forEach(thumb => {
+      thumb.addEventListener('click', () => {
+        playSound('click');
+        galleryThumbs.forEach(t => t.classList.remove('active'));
+        thumb.classList.add('active');
+        
+        if (thumb.id === 'gradient-thumb-btn') {
+          createRandomGradient();
+        } else {
+          originalImageSrc = thumb.dataset.url;
+          processImage(originalImageSrc);
+        }
+      });
+    });
+
+    // Custom File upload handler
+    fileUploader.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        playSound('click');
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          originalImageSrc = evt.target.result;
+          // De-select default gallery thumbs
+          galleryThumbs.forEach(t => t.classList.remove('active'));
+          processImage(originalImageSrc);
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    // Reshuffle / Restart button actions
+    shuffleBtn.addEventListener('click', () => {
+      playSound('click');
+      shuffle();
+    });
+    
+    victoryRestartBtn.addEventListener('click', () => {
+      victoryModal.classList.remove('open');
+      stopConfetti();
+      shuffle();
+    });
+
+    // --- COMPRESSIVE BASE64 & SHORT LINK SHARER ---
+    function getPuzzleShareUrl() {
+      return new Promise(resolve => {
+        const shareUrl = window.location.origin + window.location.pathname;
+        if (!originalImageSrc.startsWith('data:')) {
+          resolve(`${shareUrl}#url=${encodeURIComponent(originalImageSrc)}&grid=${gridSize}`);
+          return;
+        }
+
+        const compressImg = new Image();
+        compressImg.onload = function() {
+          const compCanvas = document.createElement('canvas');
+          compCanvas.width = 300;
+          compCanvas.height = 300;
+          compCanvas.getContext('2d').drawImage(compressImg, 0, 0, 300, 300);
+          const lowResData = compCanvas.toDataURL('image/jpeg', 0.55);
+          const rawBase64 = lowResData.replace(/^data:image\/jpeg;base64,/, '');
+          resolve(`${shareUrl}#img=${rawBase64}&grid=${gridSize}`);
+        };
+        compressImg.src = originalImageSrc;
+      });
+    }
+
+    shareGameBtn.addEventListener('click', async () => {
+      playSound('click');
+      const puzzleUrl = await getPuzzleShareUrl();
+      const shareUrl = roomCode ? `${puzzleUrl.split('#')[0]}?room=${roomCode}#${puzzleUrl.split('#')[1]}` : puzzleUrl;
+      shareUrlText.value = shareUrl;
+      shareDescription.textContent = roomCode
+        ? `Invite friends to room ${roomCode}. They will appear beside your board as they play.`
+        : 'Copy this link to share the current image and difficulty selection.';
+      shareModal.classList.add('open');
+    });
+
+    createRoomBtn.addEventListener('click', () => {
+      playSound('click');
+      connectToRoom(createRoomCode());
+    });
+
+    playerNameInput.addEventListener('change', () => {
+      getPlayerName();
+      if (roomChannel) {
+        roomChannel.track({ playerId, name: getPlayerName() });
+        broadcastState(true);
+      }
+    });
+
+    joinRoomBtn.addEventListener('click', () => {
+      playSound('click');
+      connectToRoom(roomCodeInput.value);
+    });
+
+    copyRoomBtn.addEventListener('click', async () => {
+      if (!roomCode) return;
+      const puzzleUrl = await getPuzzleShareUrl();
+      const inviteUrl = `${puzzleUrl.split('#')[0]}?room=${roomCode}#${puzzleUrl.split('#')[1]}`;
+      await navigator.clipboard.writeText(inviteUrl);
+      setRoomStatus('Invite copied to clipboard.', 'online');
+      copyRoomBtn.textContent = 'Copied!';
+      setTimeout(() => copyRoomBtn.textContent = 'Copy invite', 1500);
+    });
+
+    // Copy Link button action
+    copyLinkBtn.addEventListener('click', () => {
+      shareUrlText.select();
+      shareUrlText.setSelectionRange(0, 99999); // Mobile compatibility
+      
+      navigator.clipboard.writeText(shareUrlText.value).then(() => {
+        copyLinkBtn.textContent = 'Copied!';
+        copyLinkBtn.classList.remove('active');
+        copyLinkBtn.style.background = 'var(--color-success)';
+        playSound('click');
+        
+        setTimeout(() => {
+          copyLinkBtn.textContent = 'Copy';
+          copyLinkBtn.classList.add('active');
+          copyLinkBtn.style.background = '';
+        }, 1500);
+      });
+    });
+
+    closeShareBtn.addEventListener('click', () => {
+      shareModal.classList.remove('open');
+      playSound('click');
+    });
+
+    // --- TUTORIAL & TIPS SYSTEM ---
+    // --- REAL-TIME HINT SOLVER ENGINE (A* & Greedy Best-First Search) ---
+    // --- HINT SOLVER ENGINE (A* & Greedy Best-First Search) ---
+    function getManhattanDistance(state, size) {
+      let dist = 0;
+      for (let i = 0; i < state.length; i++) {
+        const val = state[i];
+        if (val === size * size - 1) continue; // Skip empty tile
+        const targetX = val % size;
+        const targetY = Math.floor(val / size);
+        const currX = i % size;
+        const currY = Math.floor(i / size);
+        dist += Math.abs(currX - targetX) + Math.abs(currY - targetY);
+      }
+      return dist;
+    }
+
+    function solvePuzzle(startState, size) {
+      const targetStr = Array.from({length: size*size}, (_, i) => i).join(',');
+      const startStr = startState.join(',');
+      if (startStr === targetStr) return [];
+
+      const openList = [];
+      const closedSet = new Set();
+
+      const startDist = getManhattanDistance(startState, size);
+      openList.push({
+        state: [...startState],
+        emptyIndex: startState.indexOf(size * size - 1),
+        path: [],
+        dist: startDist,
+        score: startDist
+      });
+
+      let bestNode = openList[0];
+      let expansions = 0;
+      const maxExpansions = size === 3 ? 15000 : 3000; // Cap to keep search responsive under 40ms
+
+      while (openList.length > 0 && expansions < maxExpansions) {
+        let minIdx = 0;
+        for (let i = 1; i < openList.length; i++) {
+          if (openList[i].score < openList[minIdx].score) {
+            minIdx = i;
+          }
+        }
+        const node = openList.splice(minIdx, 1)[0];
+        expansions++;
+
+        const stateStr = node.state.join(',');
+        if (stateStr === targetStr) {
+          return node.path;
+        }
+
+        closedSet.add(stateStr);
+
+        if (node.dist < bestNode.dist) {
+          bestNode = node;
+        }
+
+        const rEmpty = Math.floor(node.emptyIndex / size);
+        const cEmpty = node.emptyIndex % size;
+        const directions = [
+          {r: -1, c: 0}, {r: 1, c: 0},
+          {r: 0, c: -1}, {r: 0, c: 1}
+        ];
+
+        for (const d of directions) {
+          const r = rEmpty + d.r;
+          const c = cEmpty + d.c;
+          if (r >= 0 && r < size && c >= 0 && c < size) {
+            const nextEmpty = r * size + c;
+            
+            const nextState = [...node.state];
+            nextState[node.emptyIndex] = nextState[nextEmpty];
+            nextState[nextEmpty] = size * size - 1;
+
+            const nextStr = nextState.join(',');
+            if (closedSet.has(nextStr)) continue;
+
+            const nextDist = getManhattanDistance(nextState, size);
+            const pathCost = node.path.length + 1;
+            // A* for 3x3 (score = g + h), Greedy Best-First for 4x4 & 5x5 (score = h)
+            const score = size === 3 ? (pathCost + nextDist) : nextDist;
+
+            openList.push({
+              state: nextState,
+              emptyIndex: nextEmpty,
+              path: [...node.path, nextEmpty],
+              dist: nextDist,
+              score: score
+            });
+          }
+        }
+      }
+
+      return bestNode.path;
+    }
+
+    function updateHint() {
+      // Clear previous hint highlights
+      document.querySelectorAll('.tile').forEach(t => t.classList.remove('hint-highlight'));
+
+      if (!hintActive) {
+        hintBanner.style.display = 'none';
+        return;
+      }
+
+      // Check if already solved
+      let solved = true;
+      for (let i = 0; i < board.length; i++) {
+        if (board[i] !== i) {
+          solved = false;
+          break;
+        }
+      }
+
+      if (solved) {
+        hintBanner.style.display = 'block';
+        hintInstructionText.innerHTML = "🎉 Puzzle solved! Shuffle to play again.";
+        return;
+      }
+
+      // Solve puzzle
+      const path = solvePuzzle(board, gridSize);
+      if (path && path.length > 0) {
+        const nextIdx = path[0];
+        const nextVal = board[nextIdx];
+
+        // Find the tile and highlight it
+        const tileEl = boardEl.querySelector(`[data-value="${nextVal}"]`);
+        if (tileEl) {
+          tileEl.classList.add('hint-highlight');
+        }
+
+        const countText = path.length === 1 ? "1 move" : `${path.length} moves`;
+        hintBanner.style.display = 'block';
+        hintInstructionText.innerHTML = `Hint active! Slide the highlighted tile. Estimated remaining: <b>${countText}</b>`;
+      } else {
+        hintBanner.style.display = 'block';
+        hintInstructionText.innerHTML = "Analyzing board... Click any adjacent tile to refresh the path.";
+      }
+    }
+
+    // Toggle Hint Button Listener
+    hintToggleBtn.addEventListener('click', () => {
+      hintActive = !hintActive;
+      hintToggleBtn.classList.toggle('active', hintActive);
+      playSound('click');
+      updateHint();
+    });
+
+    // --- LEGACY TUTORIAL DATA REMOVED ---
+    const academyLessons = [
+      {
+        id: "lesson1",
+        title: "1. The Anchor (Tile 1)",
+        description: "Learn how to slide Tile 1 (value 0) into the top-left corner index.",
+        board: [3, 0, 2, 8, 1, 4, 6, 7, 5],
+        emptyIndex: 3,
+        steps: [
+          {
+            expectedVal: 3,
+            text: "<b>Step 1/2:</b> Clear the top-left corner. Click the highlighted <b>Tile 4</b> (value 3) to slide it down out of index 0."
+          },
+          {
+            expectedVal: 0,
+            text: "<b>Step 2/2:</b> Corner is clear! Click the highlighted <b>Tile 1</b> (value 0) to slide it left into the top-left corner."
+          }
+        ],
+        successMessage: "Awesome! Tile 1 is solved in the top-left. Always anchor Tile 1 first when solving sliding puzzles!"
+      },
+      {
+        id: "lesson2",
+        title: "2. Row Closure (Row 1)",
+        description: "Learn the corner rotation trick to lock Row 1 without disturbing Tile 1.",
+        board: [0, 4, 1, 3, 2, 8, 6, 7, 5],
+        emptyIndex: 5,
+        steps: [
+          {
+            expectedVal: 2,
+            text: "<b>Step 1/4:</b> We want to line up Tile 2 (value 1) and Tile 3 (value 2). Slide the highlighted <b>Tile 3</b> (value 2) left."
+          },
+          {
+            expectedVal: 4,
+            text: "<b>Step 2/4:</b> Slide the highlighted <b>Tile 5</b> (value 4) down to open the slot next to Tile 1."
+          },
+          {
+            expectedVal: 1,
+            text: "<b>Step 3/4:</b> Move <b>Tile 2</b> (value 1) left into index 1."
+          },
+          {
+            expectedVal: 2,
+            text: "<b>Step 4/4:</b> Final rotation! Slide <b>Tile 3</b> (value 2) up into the top-right corner. Watch them align!"
+          }
+        ],
+        successMessage: "Row 1 locked! Now you know the loop to solve the final tile of a row without breaking what's already done."
+      },
+      {
+        id: "lesson3",
+        title: "3. Column Lock (Col 1)",
+        description: "Solve the leftmost column (Tiles 4 & 7) using the vertical rotation loop.",
+        board: [0, 1, 2, 8, 4, 5, 3, 6, 7],
+        emptyIndex: 3,
+        steps: [
+          {
+            expectedVal: 3,
+            text: "<b>Step 1/2:</b> Align the target column. Click the highlighted <b>Tile 4</b> (value 3) to slide it up into index 3."
+          },
+          {
+            expectedVal: 6,
+            text: "<b>Step 2/2:</b> Slide the highlighted <b>Tile 7</b> (value 6) left into index 6. First column is locked!"
+          }
+        ],
+        successMessage: "Column locked! Now the unsolved section is reduced to a simple bottom-right 2x2 grid."
+      },
+      {
+        id: "lesson4",
+        title: "4. The Home Stretch (2x2)",
+        description: "Solve the remaining 2x2 bottom-right area by rotating the remaining tiles in a circle.",
+        board: [0, 1, 2, 3, 8, 4, 6, 7, 5],
+        emptyIndex: 4,
+        steps: [
+          {
+            expectedVal: 4,
+            text: "<b>Step 1/2:</b> Shift the bottom row. Slide the highlighted <b>Tile 5</b> (value 4) left."
+          },
+          {
+            expectedVal: 5,
+            text: "<b>Step 2/2:</b> Final move! Slide the highlighted <b>Tile 6</b> (value 5) up into place."
+          }
+        ],
+        successMessage: "Perfect! You solved the entire board. You are now a certified Sliding Puzzle Master! 🏆"
+      }
+    ];
+
+    function loadAcademyProgress() {
+      const saved = localStorage.getItem('flux_academy_progress');
+      if (saved) {
+        academyProgress = parseInt(saved, 10);
+      } else {
+        academyProgress = 1;
+      }
+    }
+
+    function saveAcademyProgress(prog) {
+      academyProgress = Math.max(academyProgress, prog);
+      localStorage.setItem('flux_academy_progress', academyProgress);
+    }
+
+    function openAcademy() {
+      loadAcademyProgress();
+      renderAcademySyllabus();
+      academyModal.classList.add('open');
+    }
+
+    function closeAcademy() {
+      academyModal.classList.remove('open');
+    }
+
+    function renderAcademySyllabus() {
+      academyLessonsContainer.innerHTML = '';
+      academyLessons.forEach((lesson, index) => {
+        const lessonNum = index + 1;
+        const isLocked = lessonNum > academyProgress;
+        
+        const card = document.createElement('div');
+        card.className = `academy-grid-lesson ${isLocked ? 'locked' : ''}`;
+        
+        card.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="font-family: 'Space Grotesk', sans-serif; font-size: 1.15rem; color: ${isLocked ? 'var(--text-muted)' : '#06b6d4'}; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+              ${lesson.title} ${lessonNum < academyProgress ? '✅' : ''}
+            </h3>
+            <span style="font-size: 0.8rem; font-weight: 700; color: ${isLocked ? 'var(--text-muted)' : 'var(--color-neon)'}; text-transform: uppercase;">
+              ${isLocked ? '🔒 Locked' : (lessonNum < academyProgress ? 'Passed' : 'Available')}
+            </span>
+          </div>
+          <p style="color: var(--text-muted); font-size: 0.85rem; line-height: 1.45;">${lesson.description}</p>
+          <button class="btn btn-block ${isLocked ? '' : 'active'}" style="margin-top: 6px; font-size: 0.85rem; padding: 8px 12px;" ${isLocked ? 'disabled' : ''}>
+            ${isLocked ? 'Unlock Previous Lesson' : (lessonNum < academyProgress ? 'Review Lesson' : 'Start Lesson 🚀')}
+          </button>
+        `;
+
+        if (!isLocked) {
+          card.querySelector('button').addEventListener('click', () => {
+            playSound('click');
+            startAcademyLesson(lesson.id);
+          });
+        }
+
+        academyLessonsContainer.appendChild(card);
+      });
+    }
+
+    function startAcademyLesson(lessonId) {
+      closeAcademy();
+      
+      academyActive = true;
+      currentLessonId = lessonId;
+      lessonStep = 0;
+      hintActive = false; // Disable hint engine to avoid double indicators
+      hintToggleBtn.classList.remove('active');
+      hintBanner.style.display = 'none';
+
+      const lesson = academyLessons.find(l => l.id === lessonId);
+      if (!lesson) return;
+
+      // Enable 3x3 layout
+      gridSize = 3;
+      document.documentElement.style.setProperty('--grid-size', 3);
+      difficultyButtons.forEach(btn => {
+        btn.classList.toggle('active', parseInt(btn.dataset.grid, 10) === 3);
+      });
+
+      // Set up board values
+      board = [...lesson.board];
+      emptyIndex = lesson.emptyIndex;
+
+      // Lock settings sidebar
+      lockoutLessonTitle.textContent = lesson.title;
+      settingsLockout.classList.add('active');
+
+      renderBoard();
+      resetStats();
+      clearInterval(timerInterval);
+      gameStarted = true;
+
+      academyBanner.style.display = 'block';
+      updateAcademyStep();
+    }
+
+    function quitAcademyLesson() {
+      academyActive = false;
+      settingsLockout.classList.remove('active');
+      academyBanner.style.display = 'none';
+      setupBoard(); // Return to normal play
+    }
+
+    function updateAcademyStep() {
+      // Clear highlights
+      document.querySelectorAll('.tile').forEach(t => t.classList.remove('academy-highlight'));
+
+      const lesson = academyLessons.find(l => l.id === currentLessonId);
+      if (!lesson) return;
+
+      if (lessonStep >= lesson.steps.length) {
+        completeLesson(lesson);
+        return;
+      }
+
+      const currentStep = lesson.steps[lessonStep];
+      academyInstructionText.innerHTML = currentStep.text;
+
+      // Find the next correct tile to highlight
+      const tileEl = boardEl.querySelector(`[data-value="${currentStep.expectedVal}"]`);
+      if (tileEl) {
+        tileEl.classList.add('academy-highlight');
+      }
+    }
+
+    function completeLesson(lesson) {
+      academyActive = false;
+      academyBanner.style.display = 'none';
+      settingsLockout.classList.remove('active');
+      gameStarted = false;
+
+      // Sound fanfare
+      playSound('victory');
+      triggerConfetti();
+
+      // Set up completion modal
+      lessonSuccessText.innerHTML = lesson.successMessage;
+      
+      const lessonNum = academyLessons.findIndex(l => l.id === lesson.id) + 1;
+      saveAcademyProgress(lessonNum + 1);
+
+      // Setup next buttons
+      if (lessonNum < academyLessons.length) {
+        academyNextLessonBtn.style.display = 'block';
+        academyNextLessonBtn.textContent = `Proceed to Lesson ${lessonNum + 1} ➡️`;
+      } else {
+        academyNextLessonBtn.style.display = 'none';
+      }
+
+      lessonCompleteModal.classList.add('open');
+    }
+
+    // --- CANVAS CONFETTI PARTICLE SYSTEM ---
+    function resizeConfettiCanvas() {
+      confettiCanvas.width = window.innerWidth;
+      confettiCanvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeConfettiCanvas);
+
+    function triggerConfetti() {
+      resizeConfettiCanvas();
+      particles = [];
+      const colors = ['#6366f1', '#a855f7', '#ec4899', '#10b981', '#fbbf24'];
+      
+      for (let i = 0; i < 120; i++) {
+        particles.push({
+          x: Math.random() * confettiCanvas.width,
+          y: Math.random() * confettiCanvas.height - confettiCanvas.height,
+          vx: Math.random() * 4 - 2,
+          vy: Math.random() * 5 + 4,
+          size: Math.random() * 8 + 6,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          rotation: Math.random() * 360,
+          rotationSpeed: Math.random() * 4 - 2
+        });
+      }
+      
+      confettiActive = true;
+      updateConfetti();
+    }
+
+    function updateConfetti() {
+      if (!confettiActive) return;
+      confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+      
+      let activeCount = 0;
+      particles.forEach(p => {
+        p.y += p.vy;
+        p.x += p.vx;
+        p.rotation += p.rotationSpeed;
+        
+        // Sway drift
+        p.vx += Math.sin(p.y / 30) * 0.05;
+
+        if (p.y < confettiCanvas.height) {
+          activeCount++;
+        }
+
+        confettiCtx.save();
+        confettiCtx.translate(p.x, p.y);
+        confettiCtx.rotate(p.rotation * Math.PI / 180);
+        confettiCtx.fillStyle = p.color;
+        confettiCtx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+        confettiCtx.restore();
+      });
+
+      if (activeCount > 0) {
+        requestAnimationFrame(updateConfetti);
+      } else {
+        stopConfetti();
+      }
+    }
+
+    function stopConfetti() {
+      confettiActive = false;
+      confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+    }
+  </script>
+</body>
+</html>
