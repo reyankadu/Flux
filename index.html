@@ -788,7 +788,7 @@
           <button class="btn" id="create-room-btn" style="flex: 1;">Create room</button>
           <button class="btn" id="copy-room-btn" style="flex: 1;" disabled>Copy invite</button>
         </div>
-        <div class="room-status" id="room-status">Offline until you create or join a room.</div>
+        <div class="room-status" id="room-status">Rooms are temporary; join while your friend is connected.</div>
       </div>
 
       <!-- Sharing Action -->
@@ -931,6 +931,7 @@
     const playerId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
     let roomChannel = null;
     let roomCode = '';
+    let roomAction = 'join';
     let remotePlayers = {};
     let lastSentState = '';
     
@@ -1138,6 +1139,11 @@
       });
       const count = Object.keys(presence).length;
       opponentsCount.textContent = `${count} in room`;
+      if (roomCode && roomChannel.state === 'joined') {
+        const actionText = roomAction === 'create' ? `Room ${roomCode} created` : `Joined room ${roomCode}`;
+        const playerText = count > 1 ? `${count} players connected.` : 'Waiting for another player.';
+        setRoomStatus(`${actionText}. ${playerText}`, 'online');
+      }
       renderOpponentPlayers();
     }
 
@@ -1163,7 +1169,7 @@
       roomChannel.track(state);
     }
 
-    async function connectToRoom(nextCode) {
+    async function connectToRoom(nextCode, action = 'join') {
       const code = normalizeRoomCode(nextCode);
       if (!code) {
         setRoomStatus('Enter a room code first.', 'error');
@@ -1176,6 +1182,7 @@
 
       if (roomChannel) await supabaseClient.removeChannel(roomChannel);
       roomCode = code;
+      roomAction = action;
       roomCodeInput.value = code;
       updateRoomUrl();
       remotePlayers = {};
@@ -1197,7 +1204,6 @@
         if (status === 'SUBSCRIBED') {
           await roomChannel.track({ playerId, name: getPlayerName() });
           copyRoomBtn.disabled = false;
-          setRoomStatus(`Live room ${code}. Share the invite link.`, 'online');
           refreshPresence();
           broadcastState(true);
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -1214,7 +1220,7 @@
     window.addEventListener('DOMContentLoaded', () => {
       playerNameInput.value = localStorage.getItem('flux_player_name') || '';
       const requestedRoom = new URLSearchParams(window.location.search).get('room');
-      if (requestedRoom) connectToRoom(requestedRoom);
+      if (requestedRoom) connectToRoom(requestedRoom, 'join');
       loadBestScore();
       
       // Check for incoming share link
@@ -1801,7 +1807,7 @@
 
     createRoomBtn.addEventListener('click', () => {
       playSound('click');
-      connectToRoom(createRoomCode());
+      connectToRoom(createRoomCode(), 'create');
     });
 
     playerNameInput.addEventListener('change', () => {
@@ -1814,7 +1820,7 @@
 
     joinRoomBtn.addEventListener('click', () => {
       playSound('click');
-      connectToRoom(roomCodeInput.value);
+      connectToRoom(roomCodeInput.value, 'join');
     });
 
     copyRoomBtn.addEventListener('click', async () => {
