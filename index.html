@@ -303,33 +303,6 @@
       box-shadow: 0 4px 15px rgba(236, 72, 153, 0.4);
     }
 
-    /* Thumbnail selection */
-    .gallery-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 8px;
-    }
-
-    .gallery-thumb {
-      aspect-ratio: 1;
-      border-radius: 8px;
-      overflow: hidden;
-      cursor: pointer;
-      border: 2px solid transparent;
-      transition: all 0.2s;
-      background-size: cover;
-      background-position: center;
-    }
-
-    .gallery-thumb:hover {
-      transform: scale(1.05);
-    }
-
-    .gallery-thumb.active {
-      border-color: var(--color-accent);
-      box-shadow: 0 0 10px var(--color-accent-glow);
-    }
-
     .upload-btn-container {
       position: relative;
       width: 100%;
@@ -794,17 +767,6 @@
         </div>
       </div>
 
-      <!-- Image Source Selection -->
-      <div>
-        <div class="section-title">Gallery Presets</div>
-        <div class="gallery-grid">
-          <div class="gallery-thumb active" style="background-image: url('https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=150&auto=format&fit=crop')" data-url="https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=500&auto=format&fit=crop"></div>
-          <div class="gallery-thumb" style="background-image: url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=150&auto=format&fit=crop')" data-url="https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=500&auto=format&fit=crop"></div>
-          <div class="gallery-thumb" style="background-image: url('https://images.unsplash.com/photo-1541701494587-cb58502866ab?q=80&w=150&auto=format&fit=crop')" data-url="https://images.unsplash.com/photo-1541701494587-cb58502866ab?q=80&w=500&auto=format&fit=crop"></div>
-          <div class="gallery-thumb" id="gradient-thumb-btn" style="background: linear-gradient(135deg, #ec4899, #8b5cf6, #06b6d4)" title="Generate Random Gradient"></div>
-        </div>
-      </div>
-
       <!-- Custom Upload -->
       <div>
         <div class="section-title">Upload Custom</div>
@@ -946,7 +908,7 @@
   <script>
     // --- STATE CONFIGURATION ---
     let gridSize = 3;
-    let originalImageSrc = 'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=500&auto=format&fit=crop';
+    let originalImageSrc = '';
     let loadedImageSrc = ''; // Processed compressed image
     let board = []; // Holds index corresponding to tile. (0 to N-1)
     let emptyIndex = 0; // Where the gap is
@@ -959,9 +921,10 @@
     let soundEnabled = true;
     let hintActive = false;
 
-    // Supabase Realtime is used only for ephemeral room state; no database tables are needed.
-    const SUPABASE_URL = 'https://fyxxajqesnpcddsejlig.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5eHhhanFlc25wY2Rkc2VqbGlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NjY1MjEsImV4cCI6MjEwMDE0MjUyMX0.tZeLB4xPFLFNew6yaLWYgWvuDF49csOLpjlA12XFsuM';
+    // Static HTML does not receive Vercel env vars automatically. These optional
+    // window values allow a future runtime config while keeping this demo deployable.
+    const SUPABASE_URL = window.FLUX_SUPABASE_URL || 'https://fyxxajqesnpcddsejlig.supabase.co';
+    const SUPABASE_ANON_KEY = window.FLUX_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5eHhhanFlc25wY2Rkc2VqbGlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NjY1MjEsImV4cCI6MjEwMDE0MjUyMX0.tZeLB4xPFLFNew6yaLWYgWvuDF49csOLpjlA12XFsuM';
     const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       realtime: { params: { eventsPerSecond: 10 } }
     });
@@ -1006,7 +969,6 @@
     const opponentsCount = document.getElementById('opponents-count');
     
     const difficultyButtons = document.querySelectorAll('[data-grid]');
-    const galleryThumbs = document.querySelectorAll('.gallery-thumb');
 
     // Hint DOM Elements
     const hintToggleBtn = document.getElementById('hint-toggle-btn');
@@ -1179,19 +1141,6 @@
       renderOpponentPlayers();
     }
 
-    function broadcastConfig() {
-      if (!roomChannel) return;
-      roomChannel.send({
-        type: 'broadcast',
-        event: 'room_config',
-        payload: {
-          playerId,
-          gridSize,
-          image: originalImageSrc.startsWith('data:') ? null : originalImageSrc
-        }
-      });
-    }
-
     function isSolved() {
       return board.every((value, index) => value === index);
     }
@@ -1211,7 +1160,6 @@
       const signature = JSON.stringify({ ...state, sentAt: 0 });
       if (!force && signature === lastSentState) return;
       lastSentState = signature;
-      roomChannel.send({ type: 'broadcast', event: 'player_state', payload: state });
       roomChannel.track(state);
     }
 
@@ -1243,27 +1191,6 @@
       roomChannel
         .on('presence', { event: 'sync' }, refreshPresence)
         .on('presence', { event: 'join' }, refreshPresence)
-        .on('presence', { event: 'leave' }, refreshPresence)
-        .on('broadcast', { event: 'player_state' }, ({ payload }) => {
-          if (!payload || payload.playerId === playerId) return;
-          remotePlayers[payload.playerId] = payload;
-          renderOpponentPlayers();
-        })
-        .on('broadcast', { event: 'request_state' }, () => {
-          broadcastConfig();
-          broadcastState(true);
-        })
-        .on('broadcast', { event: 'room_config' }, ({ payload }) => {
-          if (!payload || payload.playerId === playerId) return;
-          if (!gameStarted && payload.gridSize && payload.gridSize !== gridSize) {
-            gridSize = Number(payload.gridSize);
-            difficultyButtons.forEach(btn => btn.classList.toggle('active', Number(btn.dataset.grid) === gridSize));
-          }
-          if (!gameStarted && payload.image && payload.image !== originalImageSrc) {
-            originalImageSrc = payload.image;
-            processImage(originalImageSrc);
-          }
-        });
         .on('presence', { event: 'leave' }, refreshPresence);
 
       roomChannel.subscribe(async status => {
@@ -1272,8 +1199,6 @@
           copyRoomBtn.disabled = false;
           setRoomStatus(`Live room ${code}. Share the invite link.`, 'online');
           refreshPresence();
-          roomChannel.send({ type: 'broadcast', event: 'request_state', payload: { playerId } });
-          broadcastConfig();
           broadcastState(true);
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           setRoomStatus('Could not connect to that room.', 'error');
@@ -1310,29 +1235,17 @@
         if (imgParam) {
           // Loaded Base64 image
           originalImageSrc = 'data:image/jpeg;base64,' + imgParam;
-          // Un-select gallery thumbs
-          galleryThumbs.forEach(t => t.classList.remove('active'));
           processImage(originalImageSrc);
           return;
         } else if (urlParam) {
           originalImageSrc = urlParam;
-          // Match standard gallery thumbs or reset
-          let found = false;
-          galleryThumbs.forEach(t => {
-            if (t.dataset.url === urlParam) {
-              t.classList.add('active');
-              found = true;
-            } else {
-              t.classList.remove('active');
-            }
-          });
           processImage(originalImageSrc);
           return;
         }
       }
 
       // Default load
-      processImage(originalImageSrc);
+      createRandomGradient();
     });
 
     // Handle hash change events
@@ -1355,7 +1268,6 @@
           const newSrc = 'data:image/jpeg;base64,' + imgParam;
           if (originalImageSrc !== newSrc) {
             originalImageSrc = newSrc;
-            galleryThumbs.forEach(t => t.classList.remove('active'));
             processImage(originalImageSrc);
           }
         } else if (urlParam) {
@@ -1389,7 +1301,10 @@
     // --- IMAGE PRE-PROCESSING (Crop to Square & Compress for Hash URL sharing) ---
     function processImage(src) {
       const img = new Image();
-      img.crossOrigin = "anonymous";
+      // Local uploads/data URLs must not use CORS mode. Remote URLs can.
+      if (src && !src.startsWith('data:') && !src.startsWith('blob:')) {
+        img.crossOrigin = "anonymous";
+      }
       img.onload = function() {
         const size = 450; // Standard optimized render canvas size
         const canvas = document.createElement('canvas');
@@ -1451,6 +1366,7 @@
       }
 
       loadedImageSrc = canvas.toDataURL('image/jpeg', 0.8);
+      originalImageSrc = loadedImageSrc;
       referencePreview.style.backgroundImage = `url('${loadedImageSrc}')`;
       setupBoard();
       renderOpponentPlayers();
@@ -1823,22 +1739,6 @@
       });
     });
 
-    // Gallery selection
-    galleryThumbs.forEach(thumb => {
-      thumb.addEventListener('click', () => {
-        playSound('click');
-        galleryThumbs.forEach(t => t.classList.remove('active'));
-        thumb.classList.add('active');
-        
-        if (thumb.id === 'gradient-thumb-btn') {
-          createRandomGradient();
-        } else {
-          originalImageSrc = thumb.dataset.url;
-          processImage(originalImageSrc);
-        }
-      });
-    });
-
     // Custom File upload handler
     fileUploader.addEventListener('change', (e) => {
       const file = e.target.files[0];
@@ -1847,8 +1747,6 @@
         const reader = new FileReader();
         reader.onload = function(evt) {
           originalImageSrc = evt.target.result;
-          // De-select default gallery thumbs
-          galleryThumbs.forEach(t => t.classList.remove('active'));
           processImage(originalImageSrc);
         };
         reader.readAsDataURL(file);
@@ -1953,8 +1851,6 @@
       playSound('click');
     });
 
-    // --- TUTORIAL & TIPS SYSTEM ---
-    // --- REAL-TIME HINT SOLVER ENGINE (A* & Greedy Best-First Search) ---
     // --- HINT SOLVER ENGINE (A* & Greedy Best-First Search) ---
     function getManhattanDistance(state, size) {
       let dist = 0;
@@ -2103,242 +1999,6 @@
       playSound('click');
       updateHint();
     });
-
-    // --- LEGACY TUTORIAL DATA REMOVED ---
-    const academyLessons = [
-      {
-        id: "lesson1",
-        title: "1. The Anchor (Tile 1)",
-        description: "Learn how to slide Tile 1 (value 0) into the top-left corner index.",
-        board: [3, 0, 2, 8, 1, 4, 6, 7, 5],
-        emptyIndex: 3,
-        steps: [
-          {
-            expectedVal: 3,
-            text: "<b>Step 1/2:</b> Clear the top-left corner. Click the highlighted <b>Tile 4</b> (value 3) to slide it down out of index 0."
-          },
-          {
-            expectedVal: 0,
-            text: "<b>Step 2/2:</b> Corner is clear! Click the highlighted <b>Tile 1</b> (value 0) to slide it left into the top-left corner."
-          }
-        ],
-        successMessage: "Awesome! Tile 1 is solved in the top-left. Always anchor Tile 1 first when solving sliding puzzles!"
-      },
-      {
-        id: "lesson2",
-        title: "2. Row Closure (Row 1)",
-        description: "Learn the corner rotation trick to lock Row 1 without disturbing Tile 1.",
-        board: [0, 4, 1, 3, 2, 8, 6, 7, 5],
-        emptyIndex: 5,
-        steps: [
-          {
-            expectedVal: 2,
-            text: "<b>Step 1/4:</b> We want to line up Tile 2 (value 1) and Tile 3 (value 2). Slide the highlighted <b>Tile 3</b> (value 2) left."
-          },
-          {
-            expectedVal: 4,
-            text: "<b>Step 2/4:</b> Slide the highlighted <b>Tile 5</b> (value 4) down to open the slot next to Tile 1."
-          },
-          {
-            expectedVal: 1,
-            text: "<b>Step 3/4:</b> Move <b>Tile 2</b> (value 1) left into index 1."
-          },
-          {
-            expectedVal: 2,
-            text: "<b>Step 4/4:</b> Final rotation! Slide <b>Tile 3</b> (value 2) up into the top-right corner. Watch them align!"
-          }
-        ],
-        successMessage: "Row 1 locked! Now you know the loop to solve the final tile of a row without breaking what's already done."
-      },
-      {
-        id: "lesson3",
-        title: "3. Column Lock (Col 1)",
-        description: "Solve the leftmost column (Tiles 4 & 7) using the vertical rotation loop.",
-        board: [0, 1, 2, 8, 4, 5, 3, 6, 7],
-        emptyIndex: 3,
-        steps: [
-          {
-            expectedVal: 3,
-            text: "<b>Step 1/2:</b> Align the target column. Click the highlighted <b>Tile 4</b> (value 3) to slide it up into index 3."
-          },
-          {
-            expectedVal: 6,
-            text: "<b>Step 2/2:</b> Slide the highlighted <b>Tile 7</b> (value 6) left into index 6. First column is locked!"
-          }
-        ],
-        successMessage: "Column locked! Now the unsolved section is reduced to a simple bottom-right 2x2 grid."
-      },
-      {
-        id: "lesson4",
-        title: "4. The Home Stretch (2x2)",
-        description: "Solve the remaining 2x2 bottom-right area by rotating the remaining tiles in a circle.",
-        board: [0, 1, 2, 3, 8, 4, 6, 7, 5],
-        emptyIndex: 4,
-        steps: [
-          {
-            expectedVal: 4,
-            text: "<b>Step 1/2:</b> Shift the bottom row. Slide the highlighted <b>Tile 5</b> (value 4) left."
-          },
-          {
-            expectedVal: 5,
-            text: "<b>Step 2/2:</b> Final move! Slide the highlighted <b>Tile 6</b> (value 5) up into place."
-          }
-        ],
-        successMessage: "Perfect! You solved the entire board. You are now a certified Sliding Puzzle Master! 🏆"
-      }
-    ];
-
-    function loadAcademyProgress() {
-      const saved = localStorage.getItem('flux_academy_progress');
-      if (saved) {
-        academyProgress = parseInt(saved, 10);
-      } else {
-        academyProgress = 1;
-      }
-    }
-
-    function saveAcademyProgress(prog) {
-      academyProgress = Math.max(academyProgress, prog);
-      localStorage.setItem('flux_academy_progress', academyProgress);
-    }
-
-    function openAcademy() {
-      loadAcademyProgress();
-      renderAcademySyllabus();
-      academyModal.classList.add('open');
-    }
-
-    function closeAcademy() {
-      academyModal.classList.remove('open');
-    }
-
-    function renderAcademySyllabus() {
-      academyLessonsContainer.innerHTML = '';
-      academyLessons.forEach((lesson, index) => {
-        const lessonNum = index + 1;
-        const isLocked = lessonNum > academyProgress;
-        
-        const card = document.createElement('div');
-        card.className = `academy-grid-lesson ${isLocked ? 'locked' : ''}`;
-        
-        card.innerHTML = `
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <h3 style="font-family: 'Space Grotesk', sans-serif; font-size: 1.15rem; color: ${isLocked ? 'var(--text-muted)' : '#06b6d4'}; font-weight: 700; display: flex; align-items: center; gap: 8px;">
-              ${lesson.title} ${lessonNum < academyProgress ? '✅' : ''}
-            </h3>
-            <span style="font-size: 0.8rem; font-weight: 700; color: ${isLocked ? 'var(--text-muted)' : 'var(--color-neon)'}; text-transform: uppercase;">
-              ${isLocked ? '🔒 Locked' : (lessonNum < academyProgress ? 'Passed' : 'Available')}
-            </span>
-          </div>
-          <p style="color: var(--text-muted); font-size: 0.85rem; line-height: 1.45;">${lesson.description}</p>
-          <button class="btn btn-block ${isLocked ? '' : 'active'}" style="margin-top: 6px; font-size: 0.85rem; padding: 8px 12px;" ${isLocked ? 'disabled' : ''}>
-            ${isLocked ? 'Unlock Previous Lesson' : (lessonNum < academyProgress ? 'Review Lesson' : 'Start Lesson 🚀')}
-          </button>
-        `;
-
-        if (!isLocked) {
-          card.querySelector('button').addEventListener('click', () => {
-            playSound('click');
-            startAcademyLesson(lesson.id);
-          });
-        }
-
-        academyLessonsContainer.appendChild(card);
-      });
-    }
-
-    function startAcademyLesson(lessonId) {
-      closeAcademy();
-      
-      academyActive = true;
-      currentLessonId = lessonId;
-      lessonStep = 0;
-      hintActive = false; // Disable hint engine to avoid double indicators
-      hintToggleBtn.classList.remove('active');
-      hintBanner.style.display = 'none';
-
-      const lesson = academyLessons.find(l => l.id === lessonId);
-      if (!lesson) return;
-
-      // Enable 3x3 layout
-      gridSize = 3;
-      document.documentElement.style.setProperty('--grid-size', 3);
-      difficultyButtons.forEach(btn => {
-        btn.classList.toggle('active', parseInt(btn.dataset.grid, 10) === 3);
-      });
-
-      // Set up board values
-      board = [...lesson.board];
-      emptyIndex = lesson.emptyIndex;
-
-      // Lock settings sidebar
-      lockoutLessonTitle.textContent = lesson.title;
-      settingsLockout.classList.add('active');
-
-      renderBoard();
-      resetStats();
-      clearInterval(timerInterval);
-      gameStarted = true;
-
-      academyBanner.style.display = 'block';
-      updateAcademyStep();
-    }
-
-    function quitAcademyLesson() {
-      academyActive = false;
-      settingsLockout.classList.remove('active');
-      academyBanner.style.display = 'none';
-      setupBoard(); // Return to normal play
-    }
-
-    function updateAcademyStep() {
-      // Clear highlights
-      document.querySelectorAll('.tile').forEach(t => t.classList.remove('academy-highlight'));
-
-      const lesson = academyLessons.find(l => l.id === currentLessonId);
-      if (!lesson) return;
-
-      if (lessonStep >= lesson.steps.length) {
-        completeLesson(lesson);
-        return;
-      }
-
-      const currentStep = lesson.steps[lessonStep];
-      academyInstructionText.innerHTML = currentStep.text;
-
-      // Find the next correct tile to highlight
-      const tileEl = boardEl.querySelector(`[data-value="${currentStep.expectedVal}"]`);
-      if (tileEl) {
-        tileEl.classList.add('academy-highlight');
-      }
-    }
-
-    function completeLesson(lesson) {
-      academyActive = false;
-      academyBanner.style.display = 'none';
-      settingsLockout.classList.remove('active');
-      gameStarted = false;
-
-      // Sound fanfare
-      playSound('victory');
-      triggerConfetti();
-
-      // Set up completion modal
-      lessonSuccessText.innerHTML = lesson.successMessage;
-      
-      const lessonNum = academyLessons.findIndex(l => l.id === lesson.id) + 1;
-      saveAcademyProgress(lessonNum + 1);
-
-      // Setup next buttons
-      if (lessonNum < academyLessons.length) {
-        academyNextLessonBtn.style.display = 'block';
-        academyNextLessonBtn.textContent = `Proceed to Lesson ${lessonNum + 1} ➡️`;
-      } else {
-        academyNextLessonBtn.style.display = 'none';
-      }
-
-      lessonCompleteModal.classList.add('open');
-    }
 
     // --- CANVAS CONFETTI PARTICLE SYSTEM ---
     function resizeConfettiCanvas() {
