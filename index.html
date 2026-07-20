@@ -772,7 +772,7 @@
         <div class="section-title">Upload Custom</div>
         <div class="upload-btn-container">
           <button class="btn btn-block" style="pointer-events: none;">📂 Choose Image...</button>
-          <input type="file" id="file-uploader" class="file-input" accept="image/*">
+          <input type="file" id="file-uploader" class="file-input">
         </div>
       </div>
 
@@ -1128,14 +1128,10 @@
     function refreshPresence() {
       if (!roomChannel) return;
       const presence = roomChannel.presenceState();
-      const liveIds = new Set(Object.keys(presence));
       Object.entries(presence).forEach(([id, entries]) => {
         if (id !== playerId && entries.length) {
           remotePlayers[id] = entries[entries.length - 1];
         }
-      });
-      Object.keys(remotePlayers).forEach(id => {
-        if (!liveIds.has(id)) delete remotePlayers[id];
       });
       const count = Object.keys(presence).length;
       opponentsCount.textContent = `${count} in room`;
@@ -1167,6 +1163,11 @@
       if (!force && signature === lastSentState) return;
       lastSentState = signature;
       roomChannel.track(state);
+      roomChannel.send({
+        type: 'broadcast',
+        event: 'player_state',
+        payload: state
+      });
     }
 
     async function connectToRoom(nextCode, action = 'join') {
@@ -1198,7 +1199,15 @@
       roomChannel
         .on('presence', { event: 'sync' }, refreshPresence)
         .on('presence', { event: 'join' }, refreshPresence)
-        .on('presence', { event: 'leave' }, refreshPresence);
+        .on('presence', { event: 'leave' }, ({ key }) => {
+          if (key) delete remotePlayers[key];
+          refreshPresence();
+        })
+        .on('broadcast', { event: 'player_state' }, ({ payload }) => {
+          if (!payload || payload.playerId === playerId) return;
+          remotePlayers[payload.playerId] = payload;
+          renderOpponentPlayers();
+        });
 
       roomChannel.subscribe(async status => {
         if (status === 'SUBSCRIBED') {
@@ -1748,15 +1757,31 @@
     // Custom File upload handler
     fileUploader.addEventListener('change', (e) => {
       const file = e.target.files[0];
-      if (file) {
-        playSound('click');
-        const reader = new FileReader();
-        reader.onload = function(evt) {
-          originalImageSrc = evt.target.result;
-          processImage(originalImageSrc);
-        };
-        reader.readAsDataURL(file);
+      if (!file) return;
+
+      const uploadButton = fileUploader.parentElement.querySelector('button');
+      const looksLikeImage = !file.type || file.type.startsWith('image/');
+      if (!looksLikeImage) {
+        uploadButton.textContent = 'Choose an image file';
+        fileUploader.value = '';
+        return;
       }
+
+      playSound('click');
+      uploadButton.textContent = 'Loading image…';
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        originalImageSrc = evt.target.result;
+        processImage(originalImageSrc);
+        uploadButton.textContent = 'Image loaded ✓';
+        setTimeout(() => uploadButton.textContent = '📂 Choose Image...', 1500);
+      };
+      reader.onerror = function() {
+        uploadButton.textContent = 'Could not read image';
+        fileUploader.value = '';
+        setTimeout(() => uploadButton.textContent = '📂 Choose Image...', 1500);
+      };
+      reader.readAsDataURL(file);
     });
 
     // Reshuffle / Restart button actions
@@ -2074,3 +2099,4 @@
   </script>
 </body>
 </html>
+
